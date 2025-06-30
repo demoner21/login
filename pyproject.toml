@@ -1,0 +1,34 @@
+[project]
+name = "portal_multiespectral"
+version = "0.1.0"
+requires-python = ">=3.8,<3.10"
+dependencies = [
+    "fastapi",
+    "python-multipart",
+    "uvicorn",
+    "fastapi-structlog",
+    "asgi-correlation-id",
+    "pillow",
+    "bcrypt"
+    "numpy<1.28",
+    "tensorflow<2.11",
+    "matplotlib",
+    "scikit-learn",
+    "rasterio",
+    "shapely",
+    "asyncpg",
+    "passlib",
+    "zxcvbn",
+    "python-jose",
+    "geopandas",
+    "earthengine-api",
+    "aiohttp",
+    "aiofiles",
+    "natsort",
+    "geemap",
+    "protobuf==3.20.*"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
