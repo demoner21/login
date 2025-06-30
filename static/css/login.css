@@ -1,0 +1,401 @@
+/* ===== VARIÁVEIS CUSTOMIZADAS ===== */
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-color: #10b981;
+    --error-color: #ef4444;
+    --warning-color: #f59e0b;
+    --shadow-light: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-medium: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --shadow-heavy: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    --border-radius-sm: 4px;
+    --border-radius-md: 8px;
+    --border-radius-lg: 12px;
+    --transition-base: all 0.2s ease-in-out;
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== LAYOUT PRINCIPAL ===== */
+body {
+    background: var(--primary-gradient);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+main.container {
+    max-width: 450px;
+    width: 100%;
+    background: var(--card-background-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-heavy);
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+/* ===== ANIMAÇÕES ===== */
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(20px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+@keyframes slideIn {
+    from { 
+        transform: translateX(10px);
+        opacity: 0;
+    }
+    to { 
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* ===== FORMULÁRIOS ===== */
+.form-container {
+    display: none;
+    animation: fadeIn 0.4s ease-out;
+    padding: 40px;
+}
+
+.form-container.active {
+    display: block;
+}
+
+.form-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.form-header h1 {
+    margin-bottom: 8px;
+    font-size: 1.875rem;
+    font-weight: 700;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.form-header .subtitle {
+    color: var(--muted-color);
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ===== GRUPOS DE INPUT ===== */
+.input-group {
+    position: relative;
+}
+
+.input-group label {
+    font-weight: 500;
+    margin-bottom: 6px;
+    display: block;
+    color: var(--color);
+    font-size: 0.875rem;
+}
+
+.input-group input {
+    transition: var(--transition-base);
+    border: 2px solid var(--form-element-border-color);
+    border-radius: var(--border-radius-md);
+    padding: 12px 16px;
+    font-size: 1rem;
+}
+
+.input-group input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    outline: none;
+}
+
+.input-group input.error {
+    border-color: var(--error-color);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.input-group input.success {
+    border-color: var(--success-color);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* ===== CAMPO DE SENHA ===== */
+.password-field {
+    position: relative;
+}
+
+.password-field input {
+    padding-right: 48px;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--border-radius-sm);
+    transition: var(--transition-base);
+    font-size: 1.2em;
+}
+
+.toggle-password:hover {
+    background-color: var(--dropdown-hover-background-color);
+}
+
+.toggle-password:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* ===== INDICADOR DE FORÇA DA SENHA ===== */
+.password-strength {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: none;
+}
+
+.password-strength.show {
+    display: block;
+    animation: slideIn 0.3s ease-out;
+}
+
+.password-strength.weak {
+    color: var(--error-color);
+}
+
+.password-strength.medium {
+    color: var(--warning-color);
+}
+
+.password-strength.strong {
+    color: var(--success-color);
+}
+
+/* ===== OPÇÕES DO FORMULÁRIO ===== */
+.form-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 8px 0;
+}
+
+.forgot-password {
+    font-size: 0.875rem;
+    color: var(--primary);
+    text-decoration: none;
+    transition: var(--transition-base);
+}
+
+.forgot-password:hover {
+    text-decoration: underline;
+    opacity: 0.8;
+}
+
+/* ===== CHECKBOX CUSTOMIZADO ===== */
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.checkbox-container input[type="checkbox"] {
+    display: none;
+}
+
+.checkmark {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--form-element-border-color);
+    border-radius: var(--border-radius-sm);
+    margin-right: 8px;
+    position: relative;
+    transition: var(--transition-base);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.checkbox-container input[type="checkbox"]:checked + .checkmark {
+    background: var(--primary-gradient);
+    border-color: transparent;
+}
+
+.checkbox-container input[type="checkbox"]:checked + .checkmark::after {
+    content: '✓';
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.terms-container {
+    margin: 16px 0;
+}
+
+.terms-container .checkbox-container {
+    line-height: 1.4;
+}
+
+.terms-container .link {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.terms-container .link:hover {
+    text-decoration: underline;
+}
+
+/* ===== BOTÕES ===== */
+.btn-primary {
+    background: var(--primary-gradient);
+    border: none;
+    color: white;
+    padding: 14px 24px;
+    border-radius: var(--border-radius-md);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    position: relative;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-medium);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.btn-loading {
+    display: none;
+}
+
+.btn-primary.loading .btn-text {
+    display: none;
+}
+
+.btn-primary.loading .btn-loading {
+    display: inline;
+}
+
+/* ===== MENSAGENS ===== */
+.error-message, .success-message {
+    padding: 12px 16px;
+    border-radius: var(--border-radius-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-top: 16px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.error-message {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error-color);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.success-message {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+/* ===== RODAPÉ DO FORMULÁRIO ===== */
+.form-footer {
+    text-align: center;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--form-element-border-color);
+}
+
+.form-footer p {
+    margin: 0;
+    color: var(--muted-color);
+    font-size: 0.875rem;
+}
+
+.toggle-form {
+    color: var(--primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: var(--transition-base);
+}
+
+.toggle-form:hover {
+    text-decoration: underline;
+    opacity: 0.8;
+}
+
+/* ===== RESPONSIVIDADE ===== */
+@media (max-width: 640px) {
+    main.container {
+        margin: 10px;
+        border-radius: var(--border-radius-md);
+    }
+    
+    .form-container {
+        padding: 24px;
+    }
+    
+    .form-header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .form-options {
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+    
+    .checkbox-container {
+        font-size: 0.8rem;
+    }
+}
+
+/* ===== TEMA ESCURO ===== */
+@media (prefers-color-scheme: dark) {
+    .toggle-password:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+}
