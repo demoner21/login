@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Multiespectral - Gerenciamento de ROIs</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+    <header>
+        <h1>Portal Multiespectral</h1>
+        <nav>
+            <a href="#upload">Upload Shapefile</a> |
+<a href="#visualizar">Minhas ROIs</a> |
+            <a href="#logout">Sair</a>
+        </nav>
+    </header>
+
+    <main>
+        <section id="upload">
+            <h2>Upload de Shapefile</h2>
+            <form id="shapefileForm" enctype="multipart/form-data">
+                <div>
+                    <label for="descricao">Descrição:</label>
+               <input type="text" id="descricao" name="descricao" required placeholder="Descreva a região de interesse">
+                </div>
+                <div>
+                    <label for="shp">Arquivo .shp:</label>
+              <input type="file" id="shp" name="shp" accept=".shp" required>
+                    <div class="file-info" id="shp-info"></div>
+                </div>
+                <div>
+         <label for="shx">Arquivo .shx:</label>
+                    <input type="file" id="shx" name="shx" accept=".shx" required>
+                    <div class="file-info" id="shx-info"></div>
+                </div>
+      <div>
+                    <label for="dbf">Arquivo .dbf:</label>
+                    <input type="file" id="dbf" name="dbf" accept=".dbf" required>
+                    <div class="file-info" id="dbf-info"></div>
+                </div>
+       <div>
+                    <label for="prj">Arquivo .prj (opcional):</label>
+                    <input type="file" id="prj" name="prj" accept=".prj">
+                    <div class="file-info" id="prj-info"></div>
+        </div>
+                <div>
+                    <label for="cpg">Arquivo .cpg (opcional):</label>
+                    <input type="file" id="cpg" name="cpg" accept=".cpg">
+       <div class="file-info" id="cpg-info"></div>
+                </div>
+                <div class="preview-controls">
+                    <button type="button" id="previewBtn" class="hidden" disabled>
+      <span class="loading-spinner hidden" id="previewSpinner"></span>
+                        Visualizar Shapefile
+                    </button>
+                    <button type="button" id="clearPreviewBtn" class="hidden">Limpar Visualização</button>
+                </div>
+          <button type="submit" id="submitBtn">Enviar Shapefile</button>
+            </form>
+            <div id="uploadStatus"></div>
+            <div id="previewContainer" class="hidden">
+        <h3>Pré-visualização do Shapefile</h3>
+                <div id="shapefileInfo" class="shapefile-info hidden">
+                    <h4>Informações do Shapefile</h4>
+                    <div id="shapefileDetails"></div>
+                </div>
+    <div id="previewMap"></div>
+            </div>
+        </section>
+
+        <section id="visualizar">
+            <h2>Minhas Regiões de Interesse</h2>
+            <div id="roiList">
+                <p>Carregando suas ROIs...</p>
+            </div>
+    <div id="roiDetails" class="hidden">
+                <h3>Detalhes da ROI</h3>
+                <div id="roiInfo"></div>
+                <div id="map"></div>
+                <button id="backToList">Voltar para lista</button>
+     </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Sistema Portal Multiespectral v0.1.0</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+    
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
