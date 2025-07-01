@@ -83,22 +83,20 @@
                 }
                 
                 const { access_token, refresh_token } = await response.json();
-                
                 // Armazenar tokens de forma segura
                 localStorage.setItem('access_token', access_token);
                 localStorage.setItem('refresh_token', refresh_token);
-                
-                // Redirecionar para a página principal
-                window.location.href = '/static/login.html';
-                
-            } catch (error) {
-                console.error('Erro no login:', error);
-                showLoginError("Erro ao conectar ao servidor. Tente novamente.");
-            } finally {
-                loginButton.disabled = false;
-                loginButton.textContent = "Login";
-            }
-        });
+
+                // MODIFICADO: Redirecionar para a página principal (dashboard)
+                window.location.href = '/static/dashboard.html';
+                } catch (error) {
+                    console.error('Erro no login:', error);
+                    showLoginError("Erro ao conectar ao servidor. Tente novamente.");
+                } finally {
+                    loginButton.disabled = false;
+                    loginButton.textContent = "Login";
+                }
+            });
         
         // Cadastro
         registerForm.addEventListener('submit', async function(event) {
