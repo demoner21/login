@@ -2,13 +2,12 @@ import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-# Importações das rotas
 from routes.auth_routes import router as auth_router
-from routes.roi_routes import router as roi_router # <--- 1. IMPORTAÇÃO ADICIONADA
+from routes.roi_routes import router as roi_router
 from utils.logging import setup_logging
 
 # 1. Configurar o logging
-setup_logging() # [cite: 105]
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # 2. Criar a instância do aplicativo FastAPI
@@ -29,20 +28,17 @@ app.add_middleware(
 )
 
 # 4. Incluir as Rotas da Aplicação
-# A linha abaixo importa o 'router' do seu arquivo de rotas de autenticação
-app.include_router(auth_router, prefix="/api/v1") # [cite: 107]
+app.include_router(auth_router, prefix="/api/v1")
 
-# A linha abaixo inclui as rotas de ROI (Região de Interesse)
 app.include_router(roi_router, prefix="/api/v1") # <--- 2. ROTA DE ROI ADICIONADA
 
 # Monta um diretório estático (CSS, JS, Imagens) para ser servido
-app.mount("/static", StaticFiles(directory="static", html=True), name="static") # [cite: 107]
+app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 # 5. Adicionar um evento de startup para logar o início
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Servidor iniciando e pronto para receber requisições.") # [cite: 105]
-
+    logger.info("Servidor iniciando e pronto para receber requisições.")
 # 6. Adicionar uma rota raiz para verificação
 @app.get("/", tags=["Root"])
 async def read_root():
