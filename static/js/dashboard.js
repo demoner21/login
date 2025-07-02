@@ -16,7 +16,7 @@ function logout() {
     localStorage.removeItem('access_token');
     
     // Redirecionar para a página de login (ou página inicial)
-    window.location.href = '/example/login.html';
+    window.location.href = '/static/login.html';
 }
 // =============================================================================
 // INITIALIZATION FUNCTIONS
@@ -531,67 +531,61 @@ async function downloadSentinelImages(roiId) {
 // =============================================================================
 async function handleShapefileUpload(e) {
     e.preventDefault();
-    
+
     const form = e.target;
     const formData = new FormData(form);
     const statusElement = document.getElementById('uploadStatus');
     const submitBtn = document.getElementById('submitBtn');
-    
+
     try {
-        // Mostrar loading
-        statusElement.innerHTML = '<div class="info"><span class="loading-spinner"></span>Enviando arquivos...</div>';
+        // A lógica de loading permanece a mesma
+        statusElement.innerHTML = '<div class="info"><span class="loading-spinner"></span>Enviando e processando o shapefile...</div>';
         submitBtn.disabled = true;
         submitBtn.textContent = 'Enviando...';
-        
-        const response = await fetch('/roi/upload-shapefile', {
+
+        const response = await fetch('/api/v1/roi/upload-shapefile-splitter', {
             method: 'POST',
             headers: {
                 'Authorization': 'Bearer ' + localStorage.getItem('access_token')
             },
             body: formData
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Erro no upload');
+            throw new Error(error.detail || 'Erro no upload do shapefile');
         }
-        
+
         const result = await response.json();
-        
-        // Mostrar sucesso
+
+        // MODIFICADO: A lógica de sucesso agora lida com a nova resposta,
+        // que contém uma lista de ROIs em 'rois_criadas'.
         let successMessage = `
             <div class="success">
-                <h4>ROI criada com sucesso!</h4>
-                <p><strong>Nome:</strong> ${result.nome}</p>
-                <p><strong>ID:</strong> ${result.roi_id}</p>
+                <h4>${result.mensagem}</h4>
+                <p><strong>Total de ROIs criadas:</strong> ${result.total_rois}</p>
+                <p><strong>ROIs Geradas:</strong></p>
+                <ul>
         `;
-        
-        if (result.avisos && result.avisos.length > 0) {
-            successMessage += '<p><strong>Informações:</strong></p><ul>';
-            result.avisos.forEach(aviso => {
-                successMessage += `<li>${aviso}</li>`;
-            });
-            successMessage += '</ul>';
-        }
-        
-        successMessage += '</div>';
-        statusElement.innerHTML = successMessage;
-        
-        // Atualizar lista de ROIs
-        await loadUserROIs();
-        
-        // Limpar formulário
-        form.reset();
-        
-        // Limpar informações dos arquivos
-        ['shp', 'shx', 'dbf', 'prj', 'cpg'].forEach(type => {
-            document.getElementById(`${type}-info`).textContent = '';
+
+        result.rois_criadas.forEach(roi => {
+            successMessage += `<li>${roi.nome} (ID: ${roi.roi_id})</li>`;
         });
-        
-        // Limpar visualização
+
+        successMessage += '</ul></div>';
+        statusElement.innerHTML = successMessage;
+
+        await loadUserROIs();
+        form.reset();
+        ['shp', 'shx', 'dbf', 'prj', 'cpg'].forEach(type => {
+            const infoElement = document.getElementById(`${type}-info`);
+            if (infoElement) {
+                infoElement.textContent = '';
+            }
+        });
         clearPreview();
         checkPreviewAvailability();
-        
+
     } catch (error) {
         statusElement.innerHTML = `<div class="error">Erro: ${error.message}</div>`;
     } finally {
