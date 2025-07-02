@@ -64,15 +64,131 @@ function setupEventListeners() {
     });
 }
 
+function initializeMapWithLayers(mapId) {
+    const streetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+
+    const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+    });
+
+    const baseLayers = {
+        "Ruas": streetMap,
+        "Satélite": satelliteMap
+    };
+
+    const map = L.map(mapId, {
+        layers: [streetMap] // Camada padrão
+    });
+
+    L.control.layers(baseLayers).addTo(map);
+
+    return map;
+}
+
 function initPreviewMap() {
     const previewMapElement = document.getElementById('previewMap');
     if (!previewMapElement) return;
     
-    previewMap = L.map('previewMap').setView([-15.788, -47.879], 4);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(previewMap);
+    previewMap = initializeMapWithLayers('previewMap').setView([-15.788, -47.879], 4);
 }
+
+// Adicione estas novas funções ao seu arquivo dashboard.js
+
+const editRoiModal = document.getElementById('editRoiModal');
+const editRoiForm = document.getElementById('editRoiForm');
+const editRoiStatus = document.getElementById('editRoiStatus');
+
+/**
+ * Abre o modal de edição e busca os dados da ROI para preencher o formulário.
+ */
+async function openEditModal(roiId) {
+    editRoiStatus.innerHTML = '';
+    try {
+        const response = await fetch(`/api/v1/roi/${roiId}`, {
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Falha ao buscar dados da ROI.');
+        }
+
+        const roi = await response.json();
+
+        // Preenche o formulário com os dados atuais
+        document.getElementById('editRoiId').value = roi.roi_id;
+        document.getElementById('editRoiName').value = roi.nome;
+        document.getElementById('editRoiDescription').value = roi.descricao || '';
+
+        editRoiModal.style.display = 'flex';
+
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+    }
+}
+
+/**
+ * Fecha o modal de edição.
+ */
+function closeEditModal() {
+    editRoiModal.style.display = 'none';
+    editRoiForm.reset();
+}
+
+/**
+ * Lida com o envio do formulário de edição.
+ */
+editRoiForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const roiId = document.getElementById('editRoiId').value;
+    const nome = document.getElementById('editRoiName').value;
+    const descricao = document.getElementById('editRoiDescription').value;
+    const submitBtn = this.querySelector('.btn-save');
+
+    const updateData = { nome, descricao };
+
+    editRoiStatus.innerHTML = '<div class="info">Salvando...</div>';
+    submitBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/api/v1/roi/${roiId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+            },
+            body: JSON.stringify(updateData)
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Falha ao atualizar a ROI.');
+        }
+
+        editRoiStatus.innerHTML = '<div class="success">ROI atualizada com sucesso!</div>';
+
+        // Aguarda um instante e fecha o modal, depois recarrega a lista
+        setTimeout(() => {
+            closeEditModal();
+            loadUserROIs(); // Recarrega a lista para mostrar as alterações
+        }, 1500);
+
+    } catch (error) {
+        editRoiStatus.innerHTML = `<div class="error">Erro: ${error.message}</div>`;
+    } finally {
+        submitBtn.disabled = false;
+    }
+});
+
+// Fecha o modal se o usuário clicar fora dele
+window.addEventListener('click', function(event) {
+    if (event.target === editRoiModal) {
+        closeEditModal();
+    }
+});
 
 // =============================================================================
 // FILE HANDLING FUNCTIONS
@@ -306,7 +422,7 @@ function displayShapefileInfo(geojson) {
 // =============================================================================
 async function loadUserROIs() {
     try {
-        const response = await fetch('/roi/', {
+        const response = await fetch('/api/v1/roi/', {
             headers: {
                 'Authorization': 'Bearer ' + localStorage.getItem('access_token')
             }
@@ -339,7 +455,7 @@ function displayROIList(rois) {
                 </div>
                 <div>
                     <button onclick="viewROIDetails(${roi.roi_id})">Visualizar</button>
-                    <button onclick="downloadSentinelImages(${roi.roi_id})">Download Sentinel</button>
+                    <button onclick="openEditModal(${roi.roi_id})">Editar</button>
                     <button onclick="deleteROI(${roi.roi_id})">Excluir</button>
                 </div>
             </li>
@@ -351,7 +467,7 @@ function displayROIList(rois) {
 }
 async function viewROIDetails(roiId) {
     try {
-        const response = await fetch(`/roi/${roiId}`, {
+        const response = await fetch(`/api/v1/roi/${roiId}`, {
             headers: {
                 'Authorization': 'Bearer ' + localStorage.getItem('access_token')
             }
@@ -409,10 +525,7 @@ function displayROIDetails(roi) {
     }
 
     // Initialize new map
-    window.roiMap = L.map('map').setView([-15.788, -47.879], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(window.roiMap);
+    window.roiMap = initializeMapWithLayers('map');
 
     // Add ROI geometry to map
     if (roi.geometria) {
@@ -447,7 +560,7 @@ async function deleteROI(roiId) {
     if (!confirm('Tem certeza que deseja excluir esta ROI?')) return;
     
     try {
-        const response = await fetch(`/roi/${roiId}`, {
+        const response = await fetch(`/api/v1/roi/${roiId}`, {
             method: 'DELETE',
             headers: {
                 'Authorization': 'Bearer ' + localStorage.getItem('access_token')
