@@ -12,34 +12,27 @@ class NameNormalizer:
     e padronização de formatos.
     """
     
-    # Mapeamento completo de correção de caracteres (incluindo casos em cascata)
     CHAR_CORRECTIONS = {
-        # Problemas comuns de encoding
         "Ã§": "ç", "Ã£": "ã", "Ã¢": "â", "Ã©": "é", "Ãª": "ê",
         "Ã³": "ó", "Ã´": "ô", "Ãµ": "õ", "Ã¡": "á", "Ã­": "í",
-        "Ãº": "ú", "Ã£": "ã", "Ãµ": "õ", "Ã§": "ç", "Ã©": "é",
-        "Ã¡": "á", "Ã¢": "â", "Ãª": "ê", "Ã­": "í", "Ã³": "ó",
-        "Ã´": "ô", "Ãº": "ú", "Ã": "à", "Ã»": "û", "Ã¤": "ä",
-        "Ã¶": "ö", "Ã¼": "ü", "Ã¿": "ÿ", "Ã®": "î", "Ã¯": "ï",
-        
-        # Casos de dupla codificação
+        "Ãº": "ú", "Ã": "à", "Ã»": "û", "Ã¤": "ä", "Ã¶": "ö",
+        "Ã¼": "ü", "Ã¿": "ÿ", "Ã®": "î", "Ã¯": "ï", "Ãa": "ía",
         "ÃƒÂ¡": "á", "ÃƒÂ¢": "â", "ÃƒÂ£": "ã", "ÃƒÂ§": "ç",
         "ÃƒÂ©": "é", "ÃƒÂª": "ê", "ÃƒÂ­": "í", "ÃƒÂ³": "ó",
-        "ÃƒÂ´": "ô", "ÃƒÂµ": "õ", "ÃƒÂº": "ú", "ÃƒÂ£": "ã",
-        "ÃƒÂ§": "ç", "ÃƒÂ¡": "á", "ÃƒÂ¢": "â", "ÃƒÂ©": "é",
-        "ÃƒÂ­": "í", "ÃƒÂ³": "ó", "ÃƒÂ´": "ô", "ÃƒÂº": "ú",
-        
-        # Caracteres especiais problemáticos
+        "ÃƒÂ´": "ô", "ÃƒÂµ": "õ", "ÃƒÂº": "ú",
         "â€“": "-", "â€”": "-", "â€¢": "-", "â€¦": "...",
         "â€˜": "'", "â€™": "'", "â€œ": '"', "â€": '"',
     }
 
-    # Expressões regulares para limpeza
+    # Palavras que devem permanecer em minúsculas em nomes próprios
+    LOWERCASE_WORDS = {
+        'de', 'do', 'da', 'dos', 'das', 'e', 'em', 'na', 'no', 
+        'nas', 'nos', 'por', 'para', 'com', 'à', 'a', 'o', 'as', 'os'
+    }
+
     MULTIPLE_SPACES = re.compile(r'\s+')
     SPECIAL_CHARS = re.compile(r'[^\w\s-]', re.UNICODE)
     LEADING_TRAILING_DASHES = re.compile(r'^-|-$')
-    
-    # Codificações para tentativa de decode
     ENCODINGS = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
 
     @classmethod
@@ -62,20 +55,11 @@ class NameNormalizer:
         if isinstance(text, bytes):
             text = cls._decode_bytes(text)
         
-        # Aplicar correções de caracteres
-        text = cls._fix_encoding_issues(text)
-        
-        # Normalizar caracteres Unicode (NFKC: compatibilidade + composição)
-        text = unicodedata.normalize('NFKC', text)
-        
-        # Remover caracteres especiais (exceto espaços e hífens)
-        text = cls.SPECIAL_CHARS.sub('', text)
-        
-        # Substituir múltiplos espaços por um único
-        text = cls.MULTIPLE_SPACES.sub(' ', text).strip()
-        
-        # Aplicar formatação de caso
-        text = cls._apply_case(text, case)
+        text = cls._fix_encoding_issues(text) # Aplicar correções de caracteres
+        text = unicodedata.normalize('NFKC', text) # Normalizar caracteres Unicode (NFKC: compatibilidade + composição)
+        text = cls.SPECIAL_CHARS.sub('', text) # Remover caracteres especiais (exceto espaços e hífens)
+        text = cls.MULTIPLE_SPACES.sub(' ', text).strip() # Substituir múltiplos espaços por um único        
+        text = cls._apply_case(text, case) # Aplicar formatação de caso
         
         return text
 
@@ -113,7 +97,18 @@ class NameNormalizer:
         elif case == 'upper':
             return text.upper()
         elif case == 'title':
-            return text.title()
+            words = text.split()
+            if not words:
+                return text
+            # Capitaliza a primeira palavra
+            result = [words[0].capitalize()]
+            # Processa as palavras restantes
+            for word in words[1:]:
+                if word.lower() in cls.LOWERCASE_WORDS:
+                    result.append(word.lower())
+                else:
+                    result.append(word.capitalize())
+            return ' '.join(result)
         elif case == 'sentence':
             return text.capitalize()
         return text  # 'keep' ou inválido - mantém como está
