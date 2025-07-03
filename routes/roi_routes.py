@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import logging
 from services.shapefile_service import ShapefileSplitterProcessor
-from database.roi_queries import criar_roi, listar_rois_usuario, obter_roi_por_id, atualizar_roi, deletar_roi
+from database.roi_queries import criar_propriedade_e_talhoes, listar_rois_usuario, obter_roi_por_id, atualizar_roi, deletar_roi
 from utils.jwt_utils import get_current_user
 from utils.upload_utils import save_uploaded_files, cleanup_temp_files
 from pydantic import BaseModel, Field
@@ -27,6 +27,10 @@ class ROIBase(BaseModel):
     status: Optional[str] = "ativo"
     nome_arquivo_original: Optional[str] = None
     metadata: Optional[Dict] = None
+    tipo_roi: Optional[str] = None
+    roi_pai_id: Optional[int] = None
+    nome_propriedade: Optional[str] = None
+    nome_talhao: Optional[str] = None
 
 class ROIResponse(ROIBase):
     roi_id: int
@@ -39,15 +43,35 @@ class ROIResponse(ROIBase):
             datetime: lambda v: v.isoformat()
         }
 
-class ShapefileSplitUploadResponse(BaseModel):
-    rois_criadas: List[ROIResponse]
-    arquivos_processados: List[str]
-    total_rois: int
+class HierarchicalUploadResponse(BaseModel):
     mensagem: str
+    propriedades_criadas: int
+    talhoes_criados: int
+    detalhes: List[Dict]
 
 class ROICreate(BaseModel):
     nome: Optional[str] = None
     descricao: Optional[str] = None
+
+def generate_roi_name(base_name: str, identifier: str, type_prefix: str) -> str:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    clean_base = Path(base_name).stem.replace(" ", "_")
+    clean_identifier = str(identifier).replace(" ", "_").replace("/", "_")
+    return f"{type_prefix}_{clean_base}_{clean_identifier}_{timestamp}"
+
+def process_roi_data(roi_dict: dict) -> dict:
+    processed = dict(roi_dict)
+    if processed.get('geometria') and isinstance(processed['geometria'], str):
+        try:
+            processed['geometria'] = json.loads(processed['geometria'])
+        except (json.JSONDecodeError, TypeError):
+            processed['geometria'] = None
+    if processed.get('metadata') and isinstance(processed['metadata'], str):
+        try:
+            processed['metadata'] = json.loads(processed['metadata'])
+        except (json.JSONDecodeError, TypeError):
+            processed['metadata'] = {}
+    return processed
 
 VALID_STATUS_VALUES = ["ativo", "inativo", "processando", "erro"]
 
@@ -132,25 +156,21 @@ def process_roi_data(roi_dict: dict) -> dict:
 # --- Endpoints da API ---
 
 @router.post(
-    "/upload-shapefile-splitter", 
-    response_model=ShapefileSplitUploadResponse,
+    "/upload-shapefile-splitter",
+    response_model=HierarchicalUploadResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload de shapefile para criar ROIs por propriedade",
+    summary="[Hierárquico] Upload de shapefile para criar Propriedades e Talhões",
     description="""
-    Cria múltiplas Regiões de Interesse (ROIs) a partir de um único shapefile, 
-    agrupando as feições pelo campo 'Propriedad'.
-    - **Arquivos obrigatórios**: .shp, .shx e .dbf
-    - **Processamento**: Geometrias 3D são convertidas para 2D (removendo o eixo Z).
-    - **Resultado**: Uma ROI é criada para cada valor único na coluna 'Propriedad'.
-    - **CRS**: O sistema de referência final será WGS84 (EPSG:4326).
-    """,
-    responses={
-        400: {"description": "Erro na validação dos arquivos ou dados"},
-        500: {"description": "Erro interno no processamento"}
-    }
+    Cria uma hierarquia de Regiões de Interesse (ROIs) a partir de um único shapefile.
+    - **Requisito**: O shapefile deve conter colunas que identifiquem a propriedade e o talhão.
+    - **Processamento**: Para cada propriedade única, uma ROI 'pai' é criada. Para cada talhão, uma ROI 'filha' é criada e vinculada à propriedade.
+    - **CRS**: O sistema de referência final será sempre WGS84 (EPSG:4326).
+    """
 )
 async def create_rois_from_shapefile_by_property(
-    descricao: str = Form(..., description="Descrição base para as ROIs a serem criadas"),
+    propriedade_col: str = Form(..., description="Nome da coluna no shapefile que identifica a 'Propriedade'. Ex: 'NM_PROP'"),
+    talhao_col: str = Form(..., description="Nome da coluna no shapefile que identifica o 'Talhão'. Ex: 'ID_TALHAO'"),
+
     shp: UploadFile = File(..., description="Arquivo principal .shp"),
     shx: UploadFile = File(..., description="Arquivo de índice .shx"),
     dbf: UploadFile = File(..., description="Arquivo de atributos .dbf"),
@@ -163,62 +183,65 @@ async def create_rois_from_shapefile_by_property(
     temp_dir = None
     try:
         temp_dir = save_uploaded_files([f for f in files.values() if f])
-        logger.info(f"Arquivos do shapefile salvos em: {temp_dir}")
         
+        # Lógica de processamento HIERÁRQUICA
         processor = ShapefileSplitterProcessor()
-        processing_results = await processor.process(temp_dir, group_by_column='Propriedad')
-        # Ajustar para lidar com os diferentes casos de nome de dentro de um dataframe
-        # Olha aqui
+        hierarchical_data = await processor.process(temp_dir, property_col=propriedade_col, plot_col=talhao_col)
         
-        if not processing_results:
+        if not hierarchical_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Nenhuma propriedade válida encontrada para criar ROIs."
+                detail="Nenhuma propriedade ou talhão válido encontrado para criar ROIs."
             )
         
-        logger.info(f"Shapefile dividido em {len(processing_results)} grupos (ROIs).")
-        
-        created_rois_list = []
-        for result in processing_results:
-            property_name = result['property_name']
-            feature_collection = result['feature_collection']
-            processing_metadata = result['metadata']
+        total_props_criadas = 0
+        total_talhoes_criados = 0
+        response_details = []
 
-            # Gerar nome e preparar dados para a ROI
-            roi_name = generate_roi_name(current_user['id'], files['shp'].filename, property_name)
-            
-            roi_data = {
-                "nome": roi_name,
-                "descricao": f"{descricao} - Propriedade: {property_name}",
-                "geometria": feature_collection,
-                "tipo_origem": "shapefile_split",
-                "metadata": {
-                    **processing_metadata,
-                    "arquivos_originais": [f.filename for f in files.values() if f]
-                },
-                "nome_arquivo_original": files['shp'].filename,
-                "status": "ativo"
+        for prop_info in hierarchical_data:
+            prop_data_for_db = {
+                "nome": generate_roi_name(shp.filename, prop_info['nome_propriedade'], "PROP"),
+                "descricao": f"Propriedade '{prop_info['nome_propriedade']}' importada do arquivo {shp.filename}.",
+                "nome_propriedade": prop_info['nome_propriedade'],
+                "geometria": prop_info['geometria'],
+                "metadata": prop_info['metadata']
             }
 
-            created_roi_db = await criar_roi(
+            plots_data_for_db = []
+            for talhao_info in prop_info['talhoes']:
+                plot_data = {
+                    "nome": generate_roi_name(prop_info['nome_propriedade'], talhao_info['nome_talhao'], "TALHAO"),
+                    "descricao": f"Talhão '{talhao_info['nome_talhao']}' da propriedade '{prop_info['nome_propriedade']}'.",
+                    "nome_talhao": talhao_info['nome_talhao'],
+                    "geometria": talhao_info['geometria'],
+                    "metadata": talhao_info['metadata']
+                }
+                plots_data_for_db.append(plot_data)
+
+            result = await criar_propriedade_e_talhoes(
                 user_id=current_user['id'],
-                roi_data=roi_data
+                property_data=prop_data_for_db,
+                plots_data=plots_data_for_db,
+                shp_filename=shp.filename
             )
             
-            # 1. Processa o resultado do DB para converter strings em dicionários.
-            processed_roi_db = process_roi_data(created_roi_db)
-            
-            created_rois_list.append(ROIResponse.model_validate(processed_roi_db))
+            total_props_criadas += 1
+            total_talhoes_criados += len(result['talhoes'])
+            response_details.append({
+                "propriedade": result['propriedade']['nome'],
+                "roi_id_propriedade": result['propriedade']['roi_id'],
+                "talhoes_criados": len(result['talhoes'])
+            })
 
-        return ShapefileSplitUploadResponse(
-            rois_criadas=created_rois_list,
-            arquivos_processados=[f.filename for f in files.values() if f],
-            total_rois=len(created_rois_list),
-            mensagem=f"{len(created_rois_list)} ROIs criadas com sucesso a partir do shapefile."
+        return HierarchicalUploadResponse(
+            mensagem="Processamento hierárquico concluído com sucesso.",
+            propriedades_criadas=total_props_criadas,
+            talhoes_criados=total_talhoes_criados,
+            detalhes=response_details
         )
         
     except Exception as e:
-        logger.error(f"Falha no endpoint de upload e divisão de shapefile: {str(e)}", exc_info=True)
+        logger.error(f"Falha no endpoint de upload: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ocorreu um erro inesperado: {str(e)}"
@@ -247,7 +270,8 @@ async def listar_minhas_rois(
         rois = await listar_rois_usuario(
             user_id=current_user['id'],
             limit=limit,
-            offset=offset
+            offset=offset,
+            apenas_propriedades=True
         )
         
         return [process_roi_data(roi) for roi in rois]
