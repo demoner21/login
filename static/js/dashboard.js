@@ -651,8 +651,8 @@ async function handleShapefileUpload(e) {
     const statusElement = document.getElementById('uploadStatus');
     const submitBtn = document.getElementById('submitBtn');
 
-    try {
-        // A lógica de loading permanece a mesma
+try {
+        // A lógica de loading
         statusElement.innerHTML = '<div class="info"><span class="loading-spinner"></span>Enviando e processando o shapefile...</div>';
         submitBtn.disabled = true;
         submitBtn.textContent = 'Enviando...';
@@ -664,7 +664,6 @@ async function handleShapefileUpload(e) {
             },
             body: formData
         });
-
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Erro no upload do shapefile');
@@ -672,20 +671,18 @@ async function handleShapefileUpload(e) {
 
         const result = await response.json();
 
-        // MODIFICADO: A lógica de sucesso agora lida com a nova resposta,
-        // que contém uma lista de ROIs em 'rois_criadas'.
+        // Lógica de sucesso para lidar com a resposta hierárquica
         let successMessage = `
             <div class="success">
                 <h4>${result.mensagem}</h4>
-                <p><strong>Total de ROIs criadas:</strong> ${result.total_rois}</p>
-                <p><strong>ROIs Geradas:</strong></p>
+                <p><strong>Propriedades Criadas:</strong> ${result.propriedades_criadas}</p>
+                <p><strong>Talhões Criados:</strong> ${result.talhoes_criados}</p>
+                <p><strong>Detalhes:</strong></p>
                 <ul>
         `;
-
-        result.rois_criadas.forEach(roi => {
-            successMessage += `<li>${roi.nome} (ID: ${roi.roi_id})</li>`;
+        result.detalhes.forEach(detalhe => {
+            successMessage += `<li>Propriedade '${detalhe.propriedade}' (ID: ${detalhe.roi_id_propriedade}) com ${detalhe.talhoes_criados} talhões.</li>`;
         });
-
         successMessage += '</ul></div>';
         statusElement.innerHTML = successMessage;
 
