@@ -2,12 +2,13 @@ import logging
 import os
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon, mapping
-from shapely.ops import transform
+from shapely.ops import unary_union
 from typing import Dict, List, Any
 from pathlib import Path
 import json
 import pandas as pd
 from datetime import date
+from utils.normalization_utils import normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,9 @@ def convert_3d_to_2d(geom):
 
 class ShapefileSplitterProcessor:
     """
-    Processador de shapefiles que converte geometrias para 2D e divide
-    o arquivo em múltiplos ROIs com base em um campo de propriedade.
+    Processador de shapefiles que converte para uma geometra 2D 
+    cria uma estrutura hierárquica de ROIs (Propriedades e Talhões)
+    a partir de colunas especificadas.
     """
 
     async def _read_shapefile(self, temp_dir: Path) -> gpd.GeoDataFrame:
@@ -37,7 +39,26 @@ class ShapefileSplitterProcessor:
         if not shp_files:
             raise ValueError("Nenhum arquivo .shp encontrado no diretório")
         
-        gdf = gpd.read_file(shp_files[0])
+        # Lista de codificações comuns para tentar
+        encodings_to_try = ['utf-8', 'latin-1', 'cp1252']
+        gdf = None
+        
+        for encoding in encodings_to_try:
+            try:
+                gdf = gpd.read_file(shp_files[0], encoding=encoding)
+                logger.info(f"Shapefile lido com sucesso usando a codificação: '{encoding}'")
+                break  # Se bem-sucedido, sai do loop
+            except UnicodeDecodeError:
+                logger.warning(f"Falha ao ler shapefile com a codificação '{encoding}'. Tentando a próxima.")
+                continue
+        
+        # Se nenhuma codificação funcionou, lança um erro
+        if gdf is None:
+            raise ValueError(
+                "Não foi possível ler o shapefile com as codificações testadas: "
+                f"{', '.join(encodings_to_try)}. O arquivo .dbf pode estar corrompido ou em uma codificação inesperada."
+            )
+
         if gdf.empty:
             raise ValueError("Shapefile não contém features")
             
@@ -48,15 +69,24 @@ class ShapefileSplitterProcessor:
         """Garante que o GeoDataFrame esteja no sistema de coordenadas WGS84 (EPSG:4326)."""
         if gdf.crs is None:
             logger.warning("CRS não definido. Assumindo WGS84 (EPSG:4326).")
-            gdf = gdf.set_crs("EPSG:4326", allow_override=True)
+            gdf = gdf.set_crs("EPSG:4326", allow_override=True) # [cite: 120]
         elif gdf.crs.to_epsg() != 4326:
             logger.info(f"Convertendo CRS de {gdf.crs} para EPSG:4326.")
             gdf = gdf.to_crs("EPSG:4326")
         return gdf
         
-    async def process(self, temp_dir: Path, group_by_column: str = 'Propriedad') -> List[Dict[str, Any]]: # Olha aqui
+    async def process(self, temp_dir: Path, property_col: str, plot_col: str) -> List[Dict[str, Any]]:
         """
-        Processa o shapefile, dividindo-o em várias ROIs com base na coluna 'Propriedad'.
+        Processa o shapefile, criando uma estrutura hierárquica de propriedades e talhões.
+
+        Args:
+            temp_dir: Diretório temporário com os arquivos do shapefile.
+            property_col: Nome da coluna que identifica a Propriedade.
+            plot_col: Nome da coluna que identifica o Talhão.
+
+        Returns:
+            Uma lista de dicionários, onde cada dicionário representa uma propriedade
+            e contém uma lista de seus talhões.
         """
         try:
             gdf = await self._read_shapefile(temp_dir)
@@ -67,65 +97,88 @@ class ShapefileSplitterProcessor:
             gdf['geometry'] = gdf['geometry'].apply(convert_3d_to_2d)
             logger.info("Geometrias 3D convertidas para 2D.")
 
-            date_columns = ["Dat_Plan", "Enc_Data"]
-            for col in date_columns:
-                if col in gdf.columns and pd.api.types.is_datetime64_any_dtype(gdf[col]):
-                    gdf[col] = gdf[col].dt.date
-                    logger.info(f"Coluna de data '{col}' convertida para tipo 'date'.")
+            if property_col not in gdf.columns:
+                raise ValueError(f"A coluna de propriedade '{property_col}' não foi encontrada no shapefile.")
+            if plot_col not in gdf.columns:
+                raise ValueError(f"A coluna de talhão '{plot_col}' não foi encontrada no shapefile.")
 
-            if group_by_column not in gdf.columns:
-                raise ValueError(f"A coluna de agrupamento '{group_by_column}' não foi encontrada no shapefile.")
+            # --- INÍCIO DA MODIFICAÇÃO PARA NORMALIZAÇÃO ---
+            # Cria uma nova coluna com os nomes das propriedades normalizados.
+            # A normalização usa o case 'title' para capitalizar as palavras, exceto preposições.
+            normalized_col_name = "normalized_property_name"
+            gdf[normalized_col_name] = gdf[property_col].apply(lambda x: normalize_name(str(x), case='title'))
+            logger.info(f"Coluna de propriedade '{property_col}' normalizada para agrupamento.")
+            # --- FIM DA MODIFICAÇÃO ---
 
             results = []
-            grouped = gdf.groupby(group_by_column)
+            # Agrupa pela nova coluna normalizada para garantir a consistência.
+            grouped_by_property = gdf.groupby(normalized_col_name)
             
-            for group_name, group_gdf in grouped:
+            for normalized_name, group_gdf in grouped_by_property:
                 if group_gdf.empty:
                     continue
 
-                # --- INÍCIO DA CORREÇÃO ---
-                # Converte colunas do tipo 'date' para string no formato ISO ('AAAA-MM-DD')
-                # antes de serializar para JSON.
-                for col in date_columns:
-                    if col in group_gdf.columns:
-                        # O apply garante que apenas objetos 'date' sejam convertidos
-                        group_gdf[col] = group_gdf[col].apply(lambda x: x.isoformat() if isinstance(x, date) else x)
-                # --- FIM DA CORREÇÃO ---
+                # O nome normalizado será usado como o nome principal da propriedade no banco.
+                property_name = normalized_name 
+                # Armazenamos o primeiro nome original encontrado como referência nos metadados.
+                original_property_name = group_gdf[property_col].iloc[0]
 
-                # Esta linha agora funcionará sem erros
-                feature_collection = json.loads(group_gdf.to_json())
+                property_geometry = unary_union(group_gdf['geometry'])
                 
-                bounds = group_gdf.total_bounds
+                bounds = property_geometry.bounds
                 bbox = [float(b) for b in bounds]
-                
-                # O cálculo da área funciona melhor com um CRS projetado, mas como já
-                # convertemos para WGS84, vamos usar a área projetada antes da conversão.
-                # Para simplificar, vamos assumir que a área em graus é aceitável aqui.
-                area_m2 = group_gdf.geometry.area.sum()
+                area_m2 = gpd.GeoSeries([property_geometry], crs="EPSG:4326").to_crs(epsg=3857).area.sum()
                 area_ha = area_m2 / 10000
 
-                metadata = {
+                property_metadata = {
                     "total_features": len(group_gdf),
                     "area_total_ha": round(area_ha, 4),
                     "bbox": bbox,
                     "crs_original": crs_original,
                     "sistema_referencia": "EPSG:4326",
-                    "propriedade_original": group_name
+                    "nome_original_propriedade": original_property_name
                 }
                 
-                result_item = {
-                    "property_name": str(group_name),
-                    "feature_collection": feature_collection,
-                    "metadata": metadata
+                property_data = {
+                    "nome_propriedade": str(property_name),
+                    "geometria": mapping(property_geometry),
+                    "metadata": property_metadata,
+                    "talhoes": []
                 }
-                results.append(result_item)
-                logger.info(f"Processado grupo '{group_name}' com {len(group_gdf)} feições.")
+
+                for _, talhao_row in group_gdf.iterrows():
+                    talhao_name = talhao_row[plot_col]
+                    talhao_geometry = talhao_row['geometry']
+                    
+                    talhao_attributes = talhao_row.drop(['geometry', property_col, normalized_col_name]).to_dict()
+
+                    # Limpa os atributos para serem compatíveis com JSON
+                    cleaned_attributes = {}
+                    for key, value in talhao_attributes.items():
+                        # Converte NaN para None (que vira 'null' em JSON)
+                        if pd.isna(value):
+                            cleaned_attributes[key] = None
+                        # Converte datas para string no formato ISO
+                        elif isinstance(value, date):
+                            cleaned_attributes[key] = value.isoformat()
+                        else:
+                            cleaned_attributes[key] = value
+
+                    talhao_data = {
+                        "nome_talhao": str(talhao_name),
+                        "geometria": mapping(talhao_geometry),
+                        "metadata": cleaned_attributes  # Usa o dicionário limpo
+                    }
+                    property_data["talhoes"].append(talhao_data)
+                
+                results.append(property_data)
+                logger.info(f"Processada propriedade '{property_name}' com {len(property_data['talhoes'])} talhões.")
 
             if not results:
-                raise ValueError("Nenhum grupo válido foi processado a partir do shapefile.")
+                raise ValueError("Nenhum grupo de propriedade válido foi processado a partir do shapefile.")
 
             return results
 
         except Exception as e:
-            logger.error(f"Erro no processamento e divisão do shapefile: {str(e)}", exc_info=True)
+            logger.error(f"Erro no processamento hierárquico do shapefile: {str(e)}", exc_info=True)
             raise
