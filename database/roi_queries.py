@@ -1,6 +1,6 @@
 import logging
 from database.database import with_db_connection
-from typing import List, Optional, Dict
+from typing import List, Dict, Optional, Any
 import json
 
 logger = logging.getLogger(__name__)
@@ -133,51 +133,78 @@ async def criar_roi(
         logger.error(f"Erro ao criar ROI: {str(e)}", exc_info=True)
         raise
 
-#@with_db_connection
-#async def listar_rois_usuario(
-#    conn,
-#    user_id: int,
-#    limit: int = 100,
-#    offset: int = 0,
-#    simplified: bool = True,
-#    status_filter: Optional[str] = None
-#) -> List[Dict]:
-#    """
-#    Lista ROIs do usuário com filtros e simplificação
-#    
-#    Args:
-#        conn: Conexão com o banco
-#        user_id: ID do usuário
-#        limit: Limite de resultados
-#        offset: Paginação
-#        simplified: Se True, simplifica geometrias
-#        status_filter: Filtro por status (opcional)
-#    """
-#    query = """
-#    SELECT roi_id, nome, descricao,
-#           CASE 
-#             WHEN $4 = TRUE THEN ST_AsGeoJSON(ST_Simplify(geometria, 0.01))::json
-#             ELSE ST_AsGeoJSON(geometria)::json
-#           END as geometria,
-#           tipo_origem, status, data_criacao
-#    FROM regiao_de_interesse
-#    WHERE user_id = $1
-#    {status_condition}
-#    ORDER BY data_criacao DESC
-#    LIMIT $2 OFFSET $3
-#    """.format(
-#        status_condition="AND status = $5" if status_filter else ""
-#    )
-#    
-#    params = [user_id, limit, offset, simplified]
-#    if status_filter:
-#        params.append(status_filter)
-#    
-#    results = await conn.fetch(query, *params)
-#    return [dict(row) for row in results]
+@with_db_connection
+async def criar_propriedade_e_talhoes(
+    conn,
+    *,
+    user_id: int,
+    property_data: Dict,
+    plots_data: List[Dict],
+    shp_filename: str
+) -> Dict[str, Any]:
+    """
+    Cria uma ROI de Propriedade (pai) e várias ROIs de Talhão (filhas)
+    dentro de uma única transação no banco de dados.
+    """
+    async with conn.transaction():
+        # 1. Criar a ROI da Propriedade (Pai)
+        prop_metadata = property_data.get('metadata', {})
+        prop_metadata['nome_arquivo_original'] = shp_filename
 
-# FILE: database/roi_queries.py
-# Adicione esta nova função no final do arquivo
+        prop_insert_query = """
+        INSERT INTO regiao_de_interesse 
+        (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia,
+         nome_arquivo_original, tipo_roi, nome_propriedade)
+        VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'PROPRIEDADE', $8)
+        RETURNING roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, data_criacao;
+        """
+        
+        prop_geom_json = json.dumps(property_data['geometria'])
+        
+        created_prop = await conn.fetchrow(
+            prop_insert_query,
+            user_id,
+            property_data['nome'],
+            property_data['descricao'],
+            prop_geom_json,
+            'shapefile_hierarchical',
+            json.dumps(prop_metadata),
+            shp_filename,
+            property_data['nome_propriedade']
+        )
+        
+        parent_roi_id = created_prop['roi_id']
+        logger.info(f"ROI de Propriedade '{created_prop['nome']}' criada com ID: {parent_roi_id}")
+
+        # 2. Criar as ROIs dos Talhões (Filhos/Filhas)
+        created_plots = []
+        plot_insert_query = """
+        INSERT INTO regiao_de_interesse
+        (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia,
+         nome_arquivo_original, tipo_roi, nome_propriedade, nome_talhao, roi_pai_id)
+        VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'TALHAO', $8, $9, $10)
+        RETURNING roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, data_criacao;
+        """
+        for plot in plots_data:
+            plot_geom_json = json.dumps(plot['geometria'])
+            created_plot = await conn.fetchrow(
+                plot_insert_query,
+                user_id,
+                plot['nome'],
+                plot['descricao'],
+                plot_geom_json,
+                'shapefile_hierarchical',
+                json.dumps(plot.get('metadata', {})),
+                shp_filename,
+                property_data['nome_propriedade'],
+                plot['nome_talhao'],
+                parent_roi_id
+            )
+            created_plots.append(dict(created_plot))
+        
+        logger.info(f"{len(created_plots)} ROIs de Talhão criadas para a propriedade ID {parent_roi_id}.")
+
+        return {"propriedade": dict(created_prop), "talhoes": created_plots}
 
 @with_db_connection
 async def listar_todas_rois_para_batch(conn) -> List[Dict]:
@@ -210,38 +237,42 @@ async def listar_todas_rois_para_batch(conn) -> List[Dict]:
         raise
 
 @with_db_connection
-async def listar_rois_usuario(conn, user_id: int, limit: int = 100, offset: int = 0) -> List[Dict]:
+async def listar_rois_usuario(conn, user_id: int, limit: int = 100, offset: int = 0, apenas_propriedades: bool = True) -> List[Dict]:
     """
-    Lista todas as ROIs de um usuário com paginação
+    Lista as ROIs de um usuário. Por padrão, retorna apenas as propriedades (ROIs pai).
     
     Args:
         conn: Conexão com o banco de dados
         user_id: ID do usuário
         limit: Limite de resultados
         offset: Deslocamento
+        apenas_propriedades: Se True, retorna apenas ROIs do tipo 'PROPRIEDADE'.
         
     Returns:
         Lista de dicionários com as ROIs do usuário
     """
     try:
-        results = await conn.fetch(
-            """
+        base_query = """
             SELECT 
-                roi_id, 
-                nome, 
-                descricao, 
+                roi_id, nome, descricao, 
                 COALESCE(ST_AsGeoJSON(geometria)::json, '{}'::json) as geometria,
-                tipo_origem, 
-                status, 
-                data_criacao, 
-                data_modificacao
+                tipo_origem,
+                status,
+                data_criacao,
+                data_modificacao,
+                tipo_roi,
+                roi_pai_id,
+                nome_propriedade,
+                nome_talhao
             FROM regiao_de_interesse
             WHERE user_id = $1
-            ORDER BY data_criacao DESC
-            LIMIT $2 OFFSET $3
-            """,
-            user_id, limit, offset
-        )
+        """
+        
+        filter_condition = "AND tipo_roi = 'PROPRIEDADE'" if apenas_propriedades else ""
+        
+        query = f"{base_query} {filter_condition} ORDER BY data_criacao DESC LIMIT $2 OFFSET $3"
+        
+        results = await conn.fetch(query, user_id, limit, offset)
         return [dict(row) for row in results]
     except Exception as e:
         logger.error(f"Erro ao listar ROIs: {str(e)}", exc_info=True)
