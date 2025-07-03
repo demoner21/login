@@ -66,20 +66,21 @@ function setupEventListeners() {
 
 function initializeMapWithLayers(mapId) {
     const streetMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: ''
     });
 
     const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        attribution: ''
     });
 
     const baseLayers = {
+        "Satélite": satelliteMap,
         "Ruas": streetMap,
-        "Satélite": satelliteMap
     };
 
     const map = L.map(mapId, {
-        layers: [streetMap] // Camada padrão
+        layers: [satelliteMap], // Camada padrão
+        attributionControl: false
     });
 
     L.control.layers(baseLayers).addTo(map);
