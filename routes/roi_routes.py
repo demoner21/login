@@ -5,10 +5,18 @@ from pathlib import Path
 import json
 import logging
 from services.shapefile_service import ShapefileSplitterProcessor
-from database.roi_queries import criar_propriedade_e_talhoes, listar_rois_usuario, obter_roi_por_id, atualizar_roi, deletar_roi
 from utils.jwt_utils import get_current_user
 from utils.upload_utils import save_uploaded_files, cleanup_temp_files
 from pydantic import BaseModel, Field
+
+from database.roi_queries import (
+    criar_propriedade_e_talhoes,
+    listar_rois_usuario,
+    obter_roi_por_id,
+    atualizar_roi,
+    deletar_roi,
+    listar_talhoes_por_propriedade
+)
 
 router = APIRouter(
     prefix="/roi",
@@ -372,4 +380,35 @@ async def deletar_roi_route(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro ao remover região de interesse"
+        )
+
+@router.get("/propriedade/{propriedade_id}/talhoes", response_model=List[ROIResponse], summary="Lista os talhões de uma propriedade")
+async def listar_talhoes_da_propriedade(
+    propriedade_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Lista todas as ROIs do tipo 'TALHAO' que são filhas de uma ROI 'PROPRIEDADE' específica.
+    """
+    try:
+        # Primeiro, verifica se a propriedade pai existe e pertence ao usuário
+        propriedade = await obter_roi_por_id(propriedade_id, current_user['id'])
+        if not propriedade or propriedade.get('tipo_roi') != 'PROPRIEDADE':
+            raise HTTPException(status_code=404, detail="Propriedade não encontrada")
+
+        # Busca os talhões filhos
+        talhoes = await listar_talhoes_por_propriedade(propriedade_id, current_user['id'])
+        return [process_roi_data(talhao) for talhao in talhoes]
+    
+    # --- INÍCIO DA CORREÇÃO ---
+    except HTTPException as he:
+        # Se for uma HTTPException (como a 404), apenas a levante novamente
+        # para que o FastAPI a manipule corretamente.
+        raise he
+    except Exception as e:
+        # Se for qualquer outra exceção inesperada, registre e levante um erro 500.
+        logger.error(f"Erro inesperado ao listar talhões: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno ao listar talhões da propriedade"
         )
