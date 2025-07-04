@@ -12,7 +12,7 @@
         <h1>Portal Multiespectral</h1>
         <nav>
             <a href="#upload">Upload Shapefile</a> |
-<a href="#visualizar">Minhas ROIs</a> |
+            <a href="#visualizar">Minhas ROIs</a> |
             <a href="#logout">Sair</a>
         </nav>
     </header>
@@ -31,7 +31,7 @@
                 <input type="text" id="propriedade_col" name="propriedade_col" required placeholder="Ex: Fazenda">
             </div>
             <div>
-                <label for="talhao_col">Indendificação do Talhão:</label>
+                 <label for="talhao_col">Indendificação do Talhão:</label>
                 <input type="text" id="talhao_col" name="talhao_col" required placeholder="Ex: TALHAO">
             </div>
             <div>
@@ -50,13 +50,13 @@
                 <div class="file-info" id="dbf-info"></div>
             </div>
             <div>
-                <label for="prj">Arquivo .prj (opcional):</label>
+                 <label for="prj">Arquivo .prj (opcional):</label>
                 <input type="file" id="prj" name="prj" accept=".prj">
                 <div class="file-info" id="prj-info"></div>
             </div>
             <div>
                 <label for="cpg">Arquivo .cpg (opcional):</label>
-                <input type="file" id="cpg" name="cpg" accept=".cpg">
+                 <input type="file" id="cpg" name="cpg" accept=".cpg">
                 <div class="file-info" id="cpg-info"></div>
             </div>
             <div class="preview-controls">
@@ -102,11 +102,11 @@
                 <form id="editRoiForm">
                     <input type="hidden" id="editRoiId">
                     <div>
-                        <label for="editRoiName">Nome:</label>
+                         <label for="editRoiName">Nome:</label>
                         <input type="text" id="editRoiName" name="nome" required>
                     </div>
                     <div>
-                        <label for="editRoiDescription">Descrição:</label>
+                         <label for="editRoiDescription">Descrição:</label>
                         <textarea id="editRoiDescription" name="descricao" rows="4"></textarea>
                     </div>
                     <div class="modal-footer">
@@ -127,6 +127,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     
-    <script src="js/dashboard.js"></script>
+    <script type="module" src="js/dashboard/main.js"></script>
 </body>
 </html>
