@@ -93,7 +93,6 @@ class ShapefileSplitterProcessor:
             crs_original = str(gdf.crs) if gdf.crs else "Não definido"
             
             gdf = await self._ensure_wgs84(gdf)
-
             gdf['geometry'] = gdf['geometry'].apply(convert_3d_to_2d)
             logger.info("Geometrias 3D convertidas para 2D.")
 
@@ -102,41 +101,46 @@ class ShapefileSplitterProcessor:
             if plot_col not in gdf.columns:
                 raise ValueError(f"A coluna de talhão '{plot_col}' não foi encontrada no shapefile.")
 
-            # --- INÍCIO DA MODIFICAÇÃO PARA NORMALIZAÇÃO ---
-            # Cria uma nova coluna com os nomes das propriedades normalizados.
-            # A normalização usa o case 'title' para capitalizar as palavras, exceto preposições.
+            date_columns = gdf.select_dtypes(include=['datetime', 'datetimetz']).columns
+            if not date_columns.empty:
+                logger.info(f"Colunas de data encontradas: {list(date_columns)}. Convertendo para string ISO.")
+                for col in date_columns:
+                    gdf[col] = gdf[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+
             normalized_col_name = "normalized_property_name"
             gdf[normalized_col_name] = gdf[property_col].apply(lambda x: normalize_name(str(x), case='title'))
             logger.info(f"Coluna de propriedade '{property_col}' normalizada para agrupamento.")
-            # --- FIM DA MODIFICAÇÃO ---
 
             results = []
-            # Agrupa pela nova coluna normalizada para garantir a consistência.
             grouped_by_property = gdf.groupby(normalized_col_name)
             
             for normalized_name, group_gdf in grouped_by_property:
                 if group_gdf.empty:
                     continue
 
-                # O nome normalizado será usado como o nome principal da propriedade no banco.
-                property_name = normalized_name 
-                # Armazenamos o primeiro nome original encontrado como referência nos metadados.
+                property_name = normalized_name
                 original_property_name = group_gdf[property_col].iloc[0]
-
                 property_geometry = unary_union(group_gdf['geometry'])
                 
                 bounds = property_geometry.bounds
                 bbox = [float(b) for b in bounds]
                 area_m2 = gpd.GeoSeries([property_geometry], crs="EPSG:4326").to_crs(epsg=3857).area.sum()
                 area_ha = area_m2 / 10000
+                
+                talhoes_feature_collection = json.loads(group_gdf.to_json())
 
+                for i, feature in enumerate(talhoes_feature_collection['features']):
+                    talhao_id_original = str(group_gdf.iloc[i][plot_col])
+                    feature['properties']['nome_talhao'] = talhao_id_original
+                
                 property_metadata = {
                     "total_features": len(group_gdf),
                     "area_total_ha": round(area_ha, 4),
                     "bbox": bbox,
                     "crs_original": crs_original,
                     "sistema_referencia": "EPSG:4326",
-                    "nome_original_propriedade": original_property_name
+                    "nome_original_propriedade": original_property_name,
+                    "feature_collection_talhoes": talhoes_feature_collection
                 }
                 
                 property_data = {
@@ -149,16 +153,13 @@ class ShapefileSplitterProcessor:
                 for _, talhao_row in group_gdf.iterrows():
                     talhao_name = talhao_row[plot_col]
                     talhao_geometry = talhao_row['geometry']
-                    
                     talhao_attributes = talhao_row.drop(['geometry', property_col, normalized_col_name]).to_dict()
 
-                    # Limpa os atributos para serem compatíveis com JSON
                     cleaned_attributes = {}
                     for key, value in talhao_attributes.items():
-                        # Converte NaN para None (que vira 'null' em JSON)
                         if pd.isna(value):
                             cleaned_attributes[key] = None
-                        # Converte datas para string no formato ISO
+                        # A conversão de data já foi feita antes, então este 'elif' é um fallback
                         elif isinstance(value, date):
                             cleaned_attributes[key] = value.isoformat()
                         else:
@@ -167,7 +168,7 @@ class ShapefileSplitterProcessor:
                     talhao_data = {
                         "nome_talhao": str(talhao_name),
                         "geometria": mapping(talhao_geometry),
-                        "metadata": cleaned_attributes  # Usa o dicionário limpo
+                        "metadata": cleaned_attributes
                     }
                     property_data["talhoes"].append(talhao_data)
                 
