@@ -295,7 +295,7 @@ async def obter_roi_por_id(conn, roi_id: int, user_id: int) -> Optional[Dict]:
         result = await conn.fetchrow(
             """
             SELECT roi_id, nome, descricao, ST_AsGeoJSON(geometria)::json as geometria,
-                   tipo_origem, status, data_criacao, data_modificacao, metadata
+                   tipo_origem, status, data_criacao, data_modificacao, metadata, tipo_roi
             FROM regiao_de_interesse
             WHERE roi_id = $1 AND user_id = $2
             """,
@@ -315,13 +315,31 @@ async def obter_roi_por_id(conn, roi_id: int, user_id: int) -> Optional[Dict]:
             except json.JSONDecodeError:
                 metadata = {}
         
-        if metadata and 'feature_collection_original' in metadata:
-            row_dict['geometria'] = metadata['feature_collection_original']
+        if row_dict.get('tipo_roi') == 'PROPRIEDADE' and metadata and 'feature_collection_talhoes' in metadata:
+            row_dict['geometria'] = metadata['feature_collection_talhoes']
             
         return row_dict
     except Exception as e:
         logger.error(f"Erro ao obter ROI: {str(e)}", exc_info=True)
         raise
+
+@with_db_connection
+async def listar_talhoes_por_propriedade(conn, propriedade_id: int, user_id: int) -> List[Dict]:
+    """
+    Busca todas as ROIs do tipo 'TALHAO' associadas a uma ROI pai (propriedade).
+    """
+    query = """
+        SELECT 
+            roi_id, nome, descricao, 
+            COALESCE(ST_AsGeoJSON(geometria)::json, '{}'::json) as geometria,
+            tipo_origem, status, data_criacao, data_modificacao,
+            tipo_roi, roi_pai_id, nome_propriedade, nome_talhao
+        FROM regiao_de_interesse
+        WHERE user_id = $1 AND roi_pai_id = $2 AND tipo_roi = 'TALHAO'
+        ORDER BY nome_talhao;
+    """
+    results = await conn.fetch(query, user_id, propriedade_id)
+    return [dict(row) for row in results]
 
 @with_db_connection
 async def atualizar_roi(conn, roi_id: int, user_id: int, update_data: Dict) -> Optional[Dict]:
