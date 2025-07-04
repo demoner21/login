@@ -143,68 +143,73 @@ async def criar_propriedade_e_talhoes(
     shp_filename: str
 ) -> Dict[str, Any]:
     """
-    Cria uma ROI de Propriedade (pai) e várias ROIs de Talhão (filhas)
-    dentro de uma única transação no banco de dados.
+    Cria uma ROI de Propriedade (pai) e várias ROIs de Talhão (filhas),
+    e salva uma FeatureCollection válida e corretamente formatada nos metadados.
     """
     async with conn.transaction():
-        # 1. Criar a ROI da Propriedade (Pai)
+        # ETAPA 1: Inserir a Propriedade PAI
         prop_metadata = property_data.get('metadata', {})
         prop_metadata['nome_arquivo_original'] = shp_filename
+        prop_metadata.pop('feature_collection_talhoes', None)
 
         prop_insert_query = """
-        INSERT INTO regiao_de_interesse 
-        (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia,
-         nome_arquivo_original, tipo_roi, nome_propriedade)
+        INSERT INTO regiao_de_interesse (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia, nome_arquivo_original, tipo_roi, nome_propriedade)
         VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'PROPRIEDADE', $8)
-        RETURNING roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, data_criacao;
+        RETURNING roi_id, nome, data_criacao, nome_propriedade;
         """
-        
         prop_geom_json = json.dumps(property_data['geometria'])
-        
         created_prop = await conn.fetchrow(
-            prop_insert_query,
-            user_id,
-            property_data['nome'],
-            property_data['descricao'],
-            prop_geom_json,
-            'shapefile_hierarchical',
-            json.dumps(prop_metadata),
-            shp_filename,
-            property_data['nome_propriedade']
+            prop_insert_query, user_id, property_data['nome'], property_data['descricao'],
+            prop_geom_json, 'shapefile_hierarchical', json.dumps(prop_metadata),
+            shp_filename, property_data['nome_propriedade']
         )
-        
         parent_roi_id = created_prop['roi_id']
         logger.info(f"ROI de Propriedade '{created_prop['nome']}' criada com ID: {parent_roi_id}")
 
-        # 2. Criar as ROIs dos Talhões (Filhos/Filhas)
-        created_plots = []
+        # ETAPA 2: Inserir todos os Talhões FILHOS
         plot_insert_query = """
-        INSERT INTO regiao_de_interesse
-        (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia,
-         nome_arquivo_original, tipo_roi, nome_propriedade, nome_talhao, roi_pai_id)
-        VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'TALHAO', $8, $9, $10)
-        RETURNING roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, data_criacao;
+        INSERT INTO regiao_de_interesse (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia, nome_arquivo_original, tipo_roi, nome_propriedade, nome_talhao, roi_pai_id)
+        VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'TALHAO', $8, $9, $10);
         """
         for plot in plots_data:
-            plot_geom_json = json.dumps(plot['geometria'])
-            created_plot = await conn.fetchrow(
-                plot_insert_query,
-                user_id,
-                plot['nome'],
-                plot['descricao'],
-                plot_geom_json,
-                'shapefile_hierarchical',
-                json.dumps(plot.get('metadata', {})),
-                shp_filename,
-                property_data['nome_propriedade'],
-                plot['nome_talhao'],
-                parent_roi_id
+            await conn.execute(
+                plot_insert_query, user_id, plot['nome'], plot['descricao'], json.dumps(plot['geometria']),
+                'shapefile_hierarchical', json.dumps(plot.get('metadata', {})), shp_filename,
+                property_data['nome_propriedade'], plot['nome_talhao'], parent_roi_id
             )
-            created_plots.append(dict(created_plot))
         
-        logger.info(f"{len(created_plots)} ROIs de Talhão criadas para a propriedade ID {parent_roi_id}.")
+        # ETAPA 3: Buscar os talhões, mas com a geometria como TEXTO.
+        talhoes_from_db = await conn.fetch("""
+            SELECT roi_id, nome_talhao, ST_AsGeoJSON(geometria) as geometria_geojson
+            FROM regiao_de_interesse
+            WHERE roi_pai_id = $1 AND user_id = $2 AND tipo_roi = 'TALHAO'
+        """, parent_roi_id, user_id)
 
-        return {"propriedade": dict(created_prop), "talhoes": created_plots}
+        # ETAPA 4: Construir a FeatureCollection em Python, decodificando a string da geometria.
+        features = []
+        for talhao in talhoes_from_db:
+            feature = {
+                "type": "Feature",
+                "geometry": json.loads(talhao['geometria_geojson']),
+                "properties": {
+                    "roi_id": talhao['roi_id'],
+                    "nome_talhao": talhao['nome_talhao']
+                }
+            }
+            features.append(feature)
+
+        final_feature_collection = {"type": "FeatureCollection", "features": features}
+        
+        # ETAPA 5: Atualizar a Propriedade PAI
+        await conn.execute("""
+            UPDATE regiao_de_interesse
+            SET metadata = metadata || jsonb_build_object('feature_collection_talhoes', $1::jsonb)
+            WHERE roi_id = $2
+        """, json.dumps(final_feature_collection), parent_roi_id)
+        
+        logger.info(f"Metadados da Propriedade ID {parent_roi_id} atualizados com a FeatureCollection.")
+        
+        return {"propriedade": dict(created_prop), "talhoes": [dict(t) for t in talhoes_from_db]}
 
 @with_db_connection
 async def listar_todas_rois_para_batch(conn) -> List[Dict]:
