@@ -61,6 +61,9 @@ class ROICreate(BaseModel):
     nome: Optional[str] = None
     descricao: Optional[str] = None
 
+class LoteProcessamentoRequest(BaseModel):
+    roi_ids: List[int]
+
 def generate_roi_name(base_name: str, identifier: str, type_prefix: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     clean_base = Path(base_name).stem.replace(" ", "_")
@@ -258,6 +261,36 @@ async def create_rois_from_shapefile_by_property(
         if temp_dir:
             cleanup_temp_files(temp_dir)
 
+@router.post("/processar-lote", summary="Processa um lote customizado de ROIs")
+async def processar_lote_de_rois(
+    request: LoteProcessamentoRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    from shapely.geometry import shape
+    from shapely.ops import unary_union
+
+    if not request.roi_ids:
+        raise HTTPException(status_code=400, detail="A lista de IDs de ROI não pode ser vazia.")
+
+    geometrias = []
+    for roi_id in request.roi_ids:
+        roi = await obter_roi_por_id(roi_id, current_user['id'])
+        if not roi:
+            raise HTTPException(status_code=404, detail=f"ROI com ID {roi_id} não encontrada ou não pertence ao usuário.")
+        geometrias.append(shape(roi['geometria']))
+    
+    # Combina todas as geometrias em uma só
+    geometria_unificada = unary_union(geometrias)
+    
+    # Aqui você chamaria o serviço do Earth Engine com a geometria_unificada
+    # e retornaria o resultado (ex: URL de download, status do processamento, etc.)
+    
+    # Exemplo de resposta
+    return {
+        "message": "Processamento de lote iniciado com sucesso.",
+        "total_rois": len(request.roi_ids),
+        "geometria_combinada": mapping(geometria_unificada) # Retornando a geometria para debug
+    }
 
 @router.get("/status/options", summary="Lista os valores de status válidos")
 async def get_status_options():
