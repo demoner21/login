@@ -61,55 +61,67 @@ async function viewROIDetails(roiId) {
 }
 
 function displayROIDetails(roi) {
-    // 1. Prepara a interface
+    // 1. Prepara a interface, escondendo a lista e mostrando a área de detalhes
     document.getElementById('roiList').classList.add('hidden');
     document.getElementById('roiDetails').classList.remove('hidden');
 
-    // 2. Exibe informações da propriedade e cria o container para ações de lote
+    // 2. Exibe as informações textuais da Propriedade principal
     document.getElementById('roiInfo').innerHTML = `
         <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
         <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
         <div id="lote-actions" style="margin-top: 15px; display: none;">
-            <button id="processarLoteBtn">Processar Selecionados (<span id="contadorLote">0</span>)</button>
+            <button id="processarLoteBtn" class="btn-process">
+                Processar Selecionados (<span id="contadorLote">0</span>)
+            </button>
         </div>
     `;
 
-    // 3. Gerencia o estado da seleção
+    // 3. Gerencia o estado da seleção de múltiplos talhões
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
 
     const atualizarBotaoLote = () => {
-        const total = talhoesSelecionados.size;
-        contadorLote.textContent = total;
-        document.getElementById('lote-actions').style.display = total > 0 ? 'block' : 'none';
+        const totalSelecionados = talhoesSelecionados.size;
+        contadorLote.textContent = totalSelecionados;
+        const containerAcoes = document.getElementById('lote-actions');
+        containerAcoes.style.display = totalSelecionados > 0 ? 'block' : 'none';
     };
 
     btnProcessarLote.onclick = () => {
+        // Esta função deve ser implementada para chamar a API de processamento em lote
         downloadSentinelImagesForLote(Array.from(talhoesSelecionados));
     };
 
-    // 4. Inicializa o mapa
-    if (roiMap) roiMap.remove();
-    roiMap = initializeMapWithLayers('map');
+    // 4. Garante a limpeza e reinicialização correta do mapa para evitar erros
+    if (window.roiMap) {
+        window.roiMap.remove();
+        window.roiMap = null;
+    }
+    // A variável global window.roiMap agora conterá um objeto de mapa válido.
+    window.roiMap = initializeMapWithLayers('map'); 
 
-    // 5. Renderiza os talhões se a geometria for uma FeatureCollection
+    // 5. Renderiza os talhões no mapa se a geometria for uma FeatureCollection válida
     if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
+        
+        // Define os estilos para os diferentes estados visuais dos talhões
         const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
         const estiloHover = { weight: 4, fillOpacity: 0.5 };
         const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
 
+        // 6. Cria a camada GeoJSON, que itera sobre cada 'feature' (talhão)
         const roiLayer = L.geoJSON(roi.geometria, {
             style: estiloPadrao,
+            
+            // onEachFeature é a função chave para adicionar interatividade a cada talhão
             onEachFeature: function(feature, layer) {
                 const props = feature.properties;
                 const talhaoNumero = props.nome_talhao || 'N/A';
-                // Acessando a variedade e a área dos metadados de cada talhão
-                const variedade = props.Variedade || 'N/A';
+                const variedade = props.variedade || 'N/A'; 
                 const areaHa = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : 'N/A';
                 const talhaoId = props.roi_id;
 
-                // Tooltip de hover
+                // Cria o tooltip de hover com as informações do talhão
                 const tooltipContent = `
                     <strong>Talhão:</strong> ${talhaoNumero}<br>
                     <strong>Variedade:</strong> ${variedade}<br>
@@ -117,37 +129,42 @@ function displayROIDetails(roi) {
                 `;
                 layer.bindTooltip(tooltipContent);
 
-                // Evento de clique para seleção múltipla
+                // Adiciona o evento de clique para selecionar/desselecionar
                 layer.on('click', () => {
-                    if (!talhaoId) return;
+                    if (!talhaoId) {
+                        console.error("Tentativa de selecionar talhão sem 'roi_id'.", feature);
+                        return;
+                    }
                     if (talhoesSelecionados.has(talhaoId)) {
                         talhoesSelecionados.delete(talhaoId);
-                        layer.setStyle(estiloPadrao);
+                        layer.setStyle(estiloPadrao); // Volta ao estilo padrão
                     } else {
                         talhoesSelecionados.add(talhaoId);
-                        layer.setStyle(estiloSelecionado);
+                        layer.setStyle(estiloSelecionado); // Aplica estilo de selecionado
                     }
                     atualizarBotaoLote();
                 });
 
-                // Eventos de mouse para destaque visual
+                // Adiciona eventos de mouse para o destaque visual (hover)
                 layer.on({
                     mouseover: (e) => e.target.setStyle(estiloHover),
                     mouseout: (e) => {
+                        // Só reseta o estilo se o talhão não estiver selecionado
                         if (!talhoesSelecionados.has(talhaoId)) {
                             roiLayer.resetStyle(e.target);
                         }
                     }
                 });
             }
-        }).addTo(roiMap);
+        }).addTo(window.roiMap);
 
+        // 7. Ajusta o zoom do mapa para enquadrar todos os talhões
         if (roiLayer.getBounds().isValid()) {
-            roiMap.fitBounds(roiLayer.getBounds());
+            window.roiMap.fitBounds(roiLayer.getBounds());
         }
-        else {
+
+    } else {
         console.warn("A geometria recebida não é uma FeatureCollection ou está vazia.", roi);
-    }
     }
 }
 
