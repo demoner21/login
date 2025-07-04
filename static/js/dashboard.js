@@ -484,76 +484,82 @@ async function viewROIDetails(roiId) {
 }
 
 function displayROIDetails(roi) {
-    // Show details and hide list
+    // 1. Alterna a visibilidade da interface
     document.getElementById('roiList').classList.add('hidden');
     document.getElementById('roiDetails').classList.remove('hidden');
 
-    // Add back button event listener
-    const backButton = document.getElementById('backToList');
-    // Remove existing event listeners to prevent duplicates
-    const newBackButton = backButton.cloneNode(true);
-    backButton.parentNode.replaceChild(newBackButton, backButton);
-    newBackButton.addEventListener('click', function() {
-        document.getElementById('roiList').classList.remove('hidden');
-        document.getElementById('roiDetails').classList.add('hidden');
-    });
-
-    // Display basic information
+    // 2. Exibe as informações textuais da Propriedade
     document.getElementById('roiInfo').innerHTML = `
-        <p><strong>Nome:</strong> ${roi.nome}</p>
+        <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
         <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
-        <p><strong>Tipo:</strong> ${roi.tipo_origem}</p>
-        <p><strong>Status:</strong> ${roi.status}</p>
-        <p><strong>Criada em:</strong> ${new Date(roi.data_criacao).toLocaleString()}</p>
-        ${roi.metadata && roi.metadata.area_ha ? `<p><strong>Área:</strong> ${roi.metadata.area_ha.toFixed(2)} hectares</p>` : ''}
+        <p><strong>Status:</strong> ${roi.status || 'ativo'}</p>
+        <p><strong>Criada em:</strong> ${new Date(roi.data_criacao).toLocaleString('pt-BR')}</p>
     `;
 
-    // Properly cleanup and reinitialize map
-    const mapElement = document.getElementById('map');
-
-    // If map container exists, remove it and create a new one
-    if (mapElement) {
-        const newMapElement = document.createElement('div');
-        newMapElement.id = 'map';
-        newMapElement.style.height = '400px'; // Set appropriate height
-        mapElement.parentNode.replaceChild(newMapElement, mapElement);
-    }
-
-    // If global roiMap exists, clean it up
+    // 3. Limpa e recria o contêiner do mapa para garantir uma inicialização limpa
     if (window.roiMap) {
         window.roiMap.remove();
         window.roiMap = null;
     }
+    window.roiMap = initializeMapWithLayers('map'); // Esta função já existe no seu código
 
-    // Initialize new map
-    window.roiMap = initializeMapWithLayers('map');
+    // 4. Verifica se a geometria (FeatureCollection dos talhões) existe
+    if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
+        
+        // 5. Cria a camada GeoJSON, que processará cada talhão individualmente
+        const roiLayer = L.geoJSON(roi.geometria, {
+            // Estilo padrão para cada talhão
+            style: function(feature) {
+                return {
+                    color: '#FF8C00',      // Laranja escuro para a borda
+                    weight: 2,
+                    opacity: 0.9,
+                    fillColor: '#FFA500',   // Laranja para o preenchimento
+                    fillOpacity: 0.2
+                };
+            },
+            // Função que é executada para cada talhão no mapa
+            onEachFeature: function(feature, layer) {
+                // Pega o número/ID do talhão a partir das suas propriedades
+                const talhaoNumero = feature.properties.nome_talhao || 'ID Indisponível';
 
-    // Add ROI geometry to map
-    if (roi.geometria) {
-        try {
-            const geojson = typeof roi.geometria === 'string' ? JSON.parse(roi.geometria) : roi.geometria;
-            const roiLayer = L.geoJSON(geojson, {
-                style: {
-                    color: '#ff7800',
-                    weight: 3,
-                    opacity: 0.8,
-                    fillOpacity: 0.3,
-                    fillColor: '#ff7800'
-                }
-            }).addTo(window.roiMap);
+                // Cria o tooltip que aparecerá ao passar o mouse sobre o talhão
+                layer.bindTooltip(`Talhão: <strong>${talhaoNumero}</strong>`, {
+                    permanent: false,
+                    direction: 'center',
+                    className: 'talhao-tooltip' // Classe CSS para estilização opcional
+                });
 
-            // Adjust view to ROI bounds
+                // Adiciona os eventos de mouse para o efeito de destaque
+                layer.on({
+                    // Quando o mouse entra na área do talhão
+                    mouseover: function(e) {
+                        const hoveredLayer = e.target;
+                        hoveredLayer.setStyle({
+                            weight: 4,          // Borda mais grossa para destaque
+                            fillOpacity: 0.5    // Preenchimento mais visível
+                        });
+                        if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                            hoveredLayer.bringToFront();
+                        }
+                    },
+                    // Quando o mouse sai da área do talhão
+                    mouseout: function(e) {
+                        // Reseta o estilo para o padrão definido acima
+                        roiLayer.resetStyle(e.target);
+                    }
+                });
+            }
+        }).addTo(window.roiMap);
+
+        // 6. Ajusta o zoom do mapa para enquadrar toda a propriedade
+        if (roiLayer.getBounds().isValid()) {
             window.roiMap.fitBounds(roiLayer.getBounds());
-
-            // Add popup with information
-            roiLayer.bindPopup(`
-                <b>${roi.nome}</b><br>
-                ${roi.descricao || ''}<br>
-                Área: ${roi.metadata?.area_ha ? roi.metadata.area_ha.toFixed(2) + ' ha' : 'não calculada'}
-            `).openPopup();
-        } catch (e) {
-            console.error('Erro ao processar geometria:', e);
         }
+
+    } else {
+        // Fallback caso a geometria não seja uma FeatureCollection
+        console.warn("A geometria recebida não é uma FeatureCollection ou está vazia.", roi);
     }
 }
 
