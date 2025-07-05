@@ -147,7 +147,7 @@ async def criar_propriedade_e_talhoes(
     e salva uma FeatureCollection válida e corretamente formatada nos metadados.
     """
     async with conn.transaction():
-        # ETAPA 1: Inserir a Propriedade PAI
+        # ETAPA 1: Inserir a Propriedade PAI (sem alterações)
         prop_metadata = property_data.get('metadata', {})
         prop_metadata['nome_arquivo_original'] = shp_filename
         prop_metadata.pop('feature_collection_talhoes', None)
@@ -166,7 +166,7 @@ async def criar_propriedade_e_talhoes(
         parent_roi_id = created_prop['roi_id']
         logger.info(f"ROI de Propriedade '{created_prop['nome']}' criada com ID: {parent_roi_id}")
 
-        # ETAPA 2: Inserir todos os Talhões FILHOS
+        # ETAPA 2: Inserir todos os Talhões FILHOS (sem alterações)
         plot_insert_query = """
         INSERT INTO regiao_de_interesse (user_id, nome, descricao, geometria, tipo_origem, metadata, sistema_referencia, nome_arquivo_original, tipo_roi, nome_propriedade, nome_talhao, roi_pai_id)
         VALUES ($1, $2, $3, ST_GeomFromGeoJSON($4), $5, $6::jsonb, 'EPSG:4326', $7, 'TALHAO', $8, $9, $10);
@@ -178,36 +178,59 @@ async def criar_propriedade_e_talhoes(
                 property_data['nome_propriedade'], plot['nome_talhao'], parent_roi_id
             )
         
-        # ETAPA 3: Buscar os talhões, mas com a geometria como TEXTO.
+        # --- INÍCIO DA CORREÇÃO ---
+
+        # ETAPA 3: Buscar os talhões, incluindo seus METADADOS.
         talhoes_from_db = await conn.fetch("""
-            SELECT roi_id, nome_talhao, ST_AsGeoJSON(geometria) as geometria_geojson
+            SELECT roi_id, nome_talhao, ST_AsGeoJSON(geometria) as geometria_geojson, metadata
             FROM regiao_de_interesse
             WHERE roi_pai_id = $1 AND user_id = $2 AND tipo_roi = 'TALHAO'
         """, parent_roi_id, user_id)
 
-        # ETAPA 4: Construir a FeatureCollection em Python, decodificando a string da geometria.
+        # ETAPA 4: Construir a FeatureCollection, garantindo que os metadados sejam mesclados.
         features = []
         for talhao in talhoes_from_db:
+            # Inicia as propriedades da feature com dados essenciais
+            feature_properties = {
+                "roi_id": talhao['roi_id'],
+                "nome_talhao": str(talhao['nome_talhao'])
+            }
+            
+            # Pega os metadados salvos do talhão
+            talhao_metadata = talhao.get('metadata')
+            
+            # Converte para dict se for uma string JSON, depois une às propriedades
+            parsed_metadata = {}
+            if isinstance(talhao_metadata, str):
+                try:
+                    parsed_metadata = json.loads(talhao_metadata)
+                except json.JSONDecodeError:
+                    logger.warning(f"Metadados do talhão ID {talhao['roi_id']} é uma string JSON malformada.")
+            elif isinstance(talhao_metadata, dict):
+                parsed_metadata = talhao_metadata
+            
+            # Mescla os metadados (área, variedade, etc.) com as propriedades base
+            feature_properties.update(parsed_metadata)
+
             feature = {
                 "type": "Feature",
                 "geometry": json.loads(talhao['geometria_geojson']),
-                "properties": {
-                    "roi_id": talhao['roi_id'],
-                    "nome_talhao": talhao['nome_talhao']
-                }
+                "properties": feature_properties # Agora contém todos os atributos
             }
             features.append(feature)
 
         final_feature_collection = {"type": "FeatureCollection", "features": features}
         
-        # ETAPA 5: Atualizar a Propriedade PAI
+        # --- FIM DA CORREÇÃO ---
+        
+        # ETAPA 5: Atualizar a Propriedade PAI com a FeatureCollection completa
         await conn.execute("""
             UPDATE regiao_de_interesse
             SET metadata = metadata || jsonb_build_object('feature_collection_talhoes', $1::jsonb)
             WHERE roi_id = $2
         """, json.dumps(final_feature_collection), parent_roi_id)
         
-        logger.info(f"Metadados da Propriedade ID {parent_roi_id} atualizados com a FeatureCollection.")
+        logger.info(f"Metadados da Propriedade ID {parent_roi_id} atualizados com a FeatureCollection completa.")
         
         return {"propriedade": dict(created_prop), "talhoes": [dict(t) for t in talhoes_from_db]}
 
@@ -300,27 +323,26 @@ async def obter_roi_por_id(conn, roi_id: int, user_id: int) -> Optional[Dict]:
         result = await conn.fetchrow(
             """
             SELECT roi_id, nome, descricao, ST_AsGeoJSON(geometria)::json as geometria,
-                   tipo_origem, status, data_criacao, data_modificacao, metadata, tipo_roi
+                   tipo_origem, status, data_criacao, data_modificacao, metadata, tipo_roi, nome_propriedade
             FROM regiao_de_interesse
             WHERE roi_id = $1 AND user_id = $2
             """,
             roi_id, user_id
         )
-        
         if not result:
             return None
-            
-        row_dict = dict(result)
         
-        # Se temos uma FeatureCollection original nos metadados, usar ela na resposta
-        metadata = row_dict.get('metadata', {})
+        row_dict = dict(result)
+        metadata = row_dict.get('metadata')
         if isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
             except json.JSONDecodeError:
                 metadata = {}
+        elif metadata is None:
+            metadata = {}
         
-        if row_dict.get('tipo_roi') == 'PROPRIEDADE' and metadata and 'feature_collection_talhoes' in metadata:
+        if row_dict.get('tipo_roi') == 'PROPRIEDADE' and 'feature_collection_talhoes' in metadata:
             row_dict['geometria'] = metadata['feature_collection_talhoes']
             
         return row_dict
