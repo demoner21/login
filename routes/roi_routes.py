@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +15,8 @@ from database.roi_queries import (
     obter_roi_por_id,
     atualizar_roi,
     deletar_roi,
-    listar_talhoes_por_propriedade
+    listar_talhoes_por_propriedade,
+    listar_variedades_unicas
 )
 
 router = APIRouter(
@@ -63,6 +64,10 @@ class ROICreate(BaseModel):
 
 class LoteProcessamentoRequest(BaseModel):
     roi_ids: List[int]
+
+class ROIListResponse(BaseModel):
+    total: int
+    rois: List[ROIResponse]
 
 def generate_roi_name(base_name: str, identifier: str, type_prefix: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -300,28 +305,44 @@ async def get_status_options():
         "description": "Valores válidos para o campo status de uma ROI"
     }
 
-@router.get("/", response_model=List[ROIResponse], summary="Lista as ROIs do usuário")
+@router.get("/", response_model=ROIListResponse, summary="Lista as ROIs do usuário")
 async def listar_minhas_rois(
     current_user: dict = Depends(get_current_user),
     limit: int = 10,
-    offset: int = 0
+    offset: int = 0,
+    variedade: Optional[str] = Query(None, description="Filtra propriedades pela variedade do talhão")
 ):
-    """Lista todas as ROIs do usuário com paginação"""
+    """Lista todas as ROIs do usuário com paginação, filtros e contagem total."""
     try:
-        rois = await listar_rois_usuario(
+        response_data = await listar_rois_usuario(
             user_id=current_user['id'],
             limit=limit,
             offset=offset,
-            apenas_propriedades=True
+            apenas_propriedades=True,
+            filtro_variedade=variedade
         )
-        
-        return [process_roi_data(roi) for roi in rois]
-        
+        return response_data
     except Exception as e:
         logger.error(f"Erro ao listar ROIs: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro ao listar regiões de interesse"
+        )
+
+@router.get("/variedades-disponiveis", response_model=List[str], summary="Lista as variedades únicas do usuário")
+async def get_variedades_disponiveis(current_user: dict = Depends(get_current_user)):
+    """
+    Endpoint para obter uma lista de todas as variedades únicas associadas
+    aos talhões de um usuário, para popular um menu dropdown.
+    """
+    try:
+        variedades = await listar_variedades_unicas(user_id=current_user['id'])
+        return variedades
+    except Exception as e:
+        logger.error(f"Erro ao buscar variedades: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao buscar lista de variedades"
         )
 
 @router.get("/{roi_id}", response_model=ROIResponse, summary="Obtém uma ROI específica")

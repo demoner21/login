@@ -265,43 +265,69 @@ async def listar_todas_rois_para_batch(conn) -> List[Dict]:
         raise
 
 @with_db_connection
-async def listar_rois_usuario(conn, user_id: int, limit: int = 100, offset: int = 0, apenas_propriedades: bool = True) -> List[Dict]:
+async def listar_rois_usuario(
+    conn,
+    user_id: int,
+    limit: int = 10,
+    offset: int = 0,
+    apenas_propriedades: bool = True,
+    filtro_variedade: Optional[str] = None
+) -> Dict[str, Any]:
     """
-    Lista as ROIs de um usuário. Por padrão, retorna apenas as propriedades (ROIs pai).
-    
-    Args:
-        conn: Conexão com o banco de dados
-        user_id: ID do usuário
-        limit: Limite de resultados
-        offset: Deslocamento
-        apenas_propriedades: Se True, retorna apenas ROIs do tipo 'PROPRIEDADE'.
-        
-    Returns:
-        Lista de dicionários com as ROIs do usuário
+    Lista as ROIs de um usuário com filtros, contagem total e paginação.
+    Esta versão foi refatorada para construir a query dinâmica de forma segura.
     """
     try:
-        base_query = """
-            SELECT 
-                roi_id, nome, descricao, 
-                COALESCE(ST_AsGeoJSON(geometria)::json, '{}'::json) as geometria,
-                tipo_origem,
-                status,
-                data_criacao,
-                data_modificacao,
-                tipo_roi,
-                roi_pai_id,
-                nome_propriedade,
-                nome_talhao
+        # --- Construção da Query Base e Cláusulas WHERE ---
+        where_clauses = ["user_id = $1", "tipo_roi = 'PROPRIEDADE'"]
+        # Parâmetros para a query de contagem
+        count_params = [user_id]
+        # Parâmetros para a query de dados
+        data_params = [user_id]
+
+        if filtro_variedade:
+            # Adiciona o filtro de variedade à cláusula WHERE e aos parâmetros
+            # Usa ILIKE para busca case-insensitive
+            # O índice do parâmetro é dinâmico para evitar erros
+            variedade_filter_clause = f"""
+            EXISTS (
+                SELECT 1 FROM regiao_de_interesse talhoes
+                WHERE talhoes.roi_pai_id = regiao_de_interesse.roi_id
+                AND talhoes.metadata->>'variedade' ILIKE ${len(data_params) + 1}
+            )
+            """
+            where_clauses.append(variedade_filter_clause)
+            filter_value = f"%{filtro_variedade}%"
+            count_params.append(filter_value)
+            data_params.append(filter_value)
+
+        final_where_clause = " WHERE " + " AND ".join(where_clauses)
+
+        # --- Execução da Query de Contagem Total ---
+        count_query = f"SELECT COUNT(*) FROM regiao_de_interesse{final_where_clause}"
+        total_records = await conn.fetchval(count_query, *count_params)
+
+        if total_records == 0:
+            return {"total": 0, "rois": []}
+
+        # --- Execução da Query de Dados Paginados ---
+        select_query = """
+            SELECT roi_id, nome, descricao, tipo_origem, status,
+                   data_criacao, data_modificacao, tipo_roi, roi_pai_id,
+                   nome_propriedade, nome_talhao
             FROM regiao_de_interesse
-            WHERE user_id = $1
         """
         
-        filter_condition = "AND tipo_roi = 'PROPRIEDADE'" if apenas_propriedades else ""
+        # Adiciona os parâmetros de paginação (LIMIT e OFFSET)
+        pagination_clause = f" ORDER BY data_criacao DESC LIMIT ${len(data_params) + 1} OFFSET ${len(data_params) + 2}"
+        data_params.extend([limit, offset])
         
-        query = f"{base_query} {filter_condition} ORDER BY data_criacao DESC LIMIT $2 OFFSET $3"
+        final_data_query = select_query + final_where_clause + pagination_clause
         
-        results = await conn.fetch(query, user_id, limit, offset)
-        return [dict(row) for row in results]
+        results = await conn.fetch(final_data_query, *data_params)
+        
+        return {"total": total_records, "rois": [dict(row) for row in results]}
+
     except Exception as e:
         logger.error(f"Erro ao listar ROIs: {str(e)}", exc_info=True)
         raise
@@ -428,4 +454,34 @@ async def deletar_roi(conn, roi_id: int, user_id: int) -> bool:
         return result == "DELETE 1"
     except Exception as e:
         logger.error(f"Erro ao deletar ROI: {str(e)}", exc_info=True)
+        raise
+
+@with_db_connection
+async def listar_variedades_unicas(conn, user_id: int) -> List[str]:
+    """
+    Busca e retorna uma lista de nomes de variedades únicos para um usuário,
+    garantindo que o campo 'variedade' seja extraído corretamente dos metadados dos talhões.
+    """
+    try:
+        # Esta query seleciona valores distintos da chave 'variedade'
+        # que está dentro do campo JSONB 'metadata', apenas para ROIs do tipo 'TALHAO'.
+        query = """
+            SELECT DISTINCT metadata->>'variedade' AS variedade
+            FROM regiao_de_interesse
+            WHERE user_id = $1
+              AND tipo_roi = 'TALHAO'
+              AND metadata ? 'variedade'
+              AND metadata->>'variedade' IS NOT NULL
+              AND TRIM(metadata->>'variedade') <> ''
+            ORDER BY variedade;
+        """
+        results = await conn.fetch(query, user_id)
+        
+        # Log para depuração (pode ser removido em produção)
+        variedades_encontradas = [row['variedade'] for row in results]
+        logger.info(f"Variedades únicas encontradas no banco: {variedades_encontradas}")
+        
+        return variedades_encontradas
+    except Exception as e:
+        logger.error(f"Erro ao listar variedades únicas: {str(e)}", exc_info=True)
         raise
