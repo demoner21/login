@@ -61,22 +61,31 @@
     </section>
 
     <section id="visualizar">
-        <h2>Minhas Regiões de Interesse</h2>
+        <h2>Minhas Regiões de Interesse (<span id="roiTotalCount">0</span>)</h2>
+    
+        <div class="search-container" style="margin-bottom: 1rem;">
+            <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
+            <select id="varietySelect">
+                <option value="">-- Todas as Variedades --</option>
+                </select>
+        </div>
+    
         <div id="roiList">
             <p>Carregando suas ROIs...</p>
         </div>
+    
         <div id="paginationControls" class="pagination-controls" style="margin-top: 1rem; text-align: center;">
             <button id="prevPageBtn" disabled>&laquo; Anterior</button>
             <span style="margin: 0 15px;">Página <span id="currentPageSpan">1</span></span>
             <button id="nextPageBtn">Próximo &raquo;</button>
         </div>
+    
         <div id="roiDetails" class="hidden">
             <h3>Detalhes da ROI</h3>
             <div id="roiInfo"></div>
             <div id="map"></div>
             <button id="backToList">Voltar para lista</button>
         </div>
-        
     </section>
 
     <div id="editRoiModal" class="modal-overlay" style="display: none;">
