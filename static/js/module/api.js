@@ -16,8 +16,19 @@ async function fetchApi(url, options = {}) {
     return response;
 }
 
-export async function fetchUserROIs(limit, offset) {
-    const response = await fetchApi(`/roi/?limit=${limit}&offset=${offset}`);
+export async function fetchUserROIs(limit, offset, variedade) {
+    let url = `/roi/?limit=${limit}&offset=${offset}`;
+    if (variedade) {
+        // Envia o termo de busca como um parâmetro de URL
+        url += `&variedade=${encodeURIComponent(variedade)}`;
+    }
+    const response = await fetchApi(url);
+
+    return await response.json();
+}
+
+export async function fetchAvailableVarieties() {
+    const response = await fetchApi('/roi/variedades-disponiveis');
     return await response.json();
 }
 
