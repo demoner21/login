@@ -2,6 +2,7 @@
 import { fetchUserROIs, fetchROIDetails, deleteUserROI, fetchAvailableVarieties } from '../module/api.js';
 import { initializeMapWithLayers } from '../module/map-utils.js';
 import { fillEditModal } from '../module/ui-handlers.js';
+import { normalizeName } from '../module/text-normalizer.js';
 
 // Variáveis de estado
 let roiMap;
@@ -136,7 +137,7 @@ export function setupROIEvents() {
 
     document.getElementById('backToList').addEventListener('click', () => {
         document.getElementById('roiList').classList.remove('hidden');
-        document.getElementById('paginationControls').style.display = 'block';
+        updatePaginationControls(parseInt(document.getElementById('roiTotalCount').textContent, 10)); 
         document.getElementById('roiDetails').classList.add('hidden');
         if (roiMap) {
             roiMap.remove();
@@ -179,12 +180,12 @@ function updatePaginationControls(totalRois) {
     const totalPages = Math.ceil(totalRois / ROIS_PER_PAGE);
 
     if (totalPages > 0) {
-        paginationControls.style.display = 'block';
+        paginationControls.classList.remove('hidden');
         currentPageSpan.textContent = currentPage;
         prevPageBtn.disabled = currentPage === 1;
         nextPageBtn.disabled = currentPage >= totalPages;
     } else {
-        paginationControls.style.display = 'none';
+        paginationControls.classList.add('hidden');
     }
 }
 
@@ -235,7 +236,7 @@ function displayROIDetails(roi) {
             style: estiloPadrao,
             onEachFeature: function(feature, layer) {
                 const props = feature.properties;
-                const talhaoNumero = props.nome_talhao || 'N/A';
+                const talhaoNumero = normalizeName(props.nome_talhao) || 'N/A';
                 const variedade = props.variedade || 'N/A';
                 const areaHa = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : 'N/A';
                 const talhaoId = props.roi_id;
