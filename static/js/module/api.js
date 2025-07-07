@@ -10,19 +10,31 @@ async function fetchApi(url, options = {}) {
 
     const response = await fetch(`${BASE_URL}${url}`, { ...options, headers });
 
-    if (response.status === 401) {
-    // Se o token for inválido/expirado, o servidor retorna 401.
-    // Forçamos o logout e interrompemos a execução.
-    logout();
-    // Lançamos um erro para parar a cadeia de promessas.
-    throw new Error('Sessão expirada. Você foi desconectado.');
+    // 1. Lógica de renovação de token (sessão deslizante)
+    const refreshedToken = response.headers.get('X-Access-Token-Refreshed');
+    if (refreshedToken) {
+        console.log('Sessão renovada. Novo token armazenado.');
+        localStorage.setItem('access_token', refreshedToken);
     }
 
+    // 2. Tratamento de erro de autenticação (token expirado/inválido)
+    if (response.status === 401) {
+        logout();
+        throw new Error('Sessão expirada. Você foi desconectado.');
+    }
+
+    // 3. Tratamento de outros erros da API
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Erro desconhecido na resposta da API.' }));
         throw new Error(error.detail || `Falha na requisição: ${response.statusText}`);
     }
 
+    // 4. Retorna a resposta JSON ou a resposta bruta se não houver conteúdo
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+        return response.json();
+    }
+    
     return response;
 }
 
@@ -34,32 +46,27 @@ export async function fetchUserROIs(limit, offset, variedade, propriedade) {
     if (propriedade) {
         url += `&propriedade=${encodeURIComponent(propriedade)}`;
     }
-    const response = await fetchApi(url);
-    return await response.json();
+    return await fetchApi(url);
 }
 
 export async function fetchAvailableVarieties() {
-    const response = await fetchApi('/roi/variedades-disponiveis');
-    return await response.json();
+    return await fetchApi('/roi/variedades-disponiveis');
 }
 
 export async function fetchAvailableProperties() {
-    const response = await fetchApi('/roi/propriedades-disponiveis');
-    return await response.json();
+    return await fetchApi('/roi/propriedades-disponiveis');
 }
 
 export async function fetchROIDetails(roiId) {
-    const response = await fetchApi(`/roi/${roiId}`);
-    return await response.json();
+    return await fetchApi(`/roi/${roiId}`);
 }
 
 export async function updateUserROI(roiId, data) {
-    const response = await fetchApi(`/roi/${roiId}`, {
+    return await fetchApi(`/roi/${roiId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
     });
-    return await response.json();
 }
 
 export async function deleteUserROI(roiId) {
@@ -69,7 +76,7 @@ export async function deleteUserROI(roiId) {
 }
 
 export async function uploadShapefile(formData) {
-    const response = await fetch('/api/v1/roi/upload-shapefile-splitter', {
+    const response = await fetch(`${BASE_URL}/roi/upload-shapefile-splitter`, {
         method: 'POST',
         headers: {
             'Authorization': 'Bearer ' + localStorage.getItem('access_token')
@@ -77,9 +84,14 @@ export async function uploadShapefile(formData) {
         body: formData
     });
 
+    if (response.status === 401) {
+        logout();
+        throw new Error('Sessão expirada. Você foi desconectado.');
+    }
+
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Erro no upload do shapefile');
     }
-    return await response.json();
+    return response.json();
 }

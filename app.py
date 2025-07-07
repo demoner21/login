@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.auth_routes import router as auth_router
 from routes.roi_routes import router as roi_router
 from utils.logging import setup_logging
+from utils.session_middleware import TokenRefreshMiddleware
 
 # 1. Configurar o logging
 setup_logging()
@@ -27,6 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(TokenRefreshMiddleware)
 # 4. Incluir as Rotas da Aplicação
 app.include_router(auth_router, prefix="/api/v1")
 
