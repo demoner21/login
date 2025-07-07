@@ -4,15 +4,8 @@ import { initializeUI } from '../module/ui-handlers.js';
 import { loadUserROIs, setupROIEvents } from './roi-manager.js';
 import { initPreviewMap, clearPreview, processShapefilePreview } from './shapefile-preview.js';
 
-let map;
-
 document.addEventListener('DOMContentLoaded', function() {
     if (!checkAuth()) return;
-
-    document.querySelector('a[href="#logout"]').addEventListener('click', (e) => {
-        e.preventDefault();
-        logout();
-    });
 
     initPreviewMap();
     loadUserROIs();
@@ -23,39 +16,56 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function setupEventListeners() {
     document.getElementById('shapefileForm').addEventListener('submit', handleShapefileUpload);
-    document.getElementById('previewBtn').addEventListener('click', processShapefilePreview);
-    document.getElementById('clearPreviewBtn').addEventListener('click', clearPreview);
+    
+    document.getElementById('shapefileUpload').addEventListener('change', handleFileSelection);
 
-    ['shp', 'shx', 'dbf', 'prj', 'cpg'].forEach(id => {
-        document.getElementById(id).addEventListener('change', (e) => handleFileChange(e, id));
+    document.getElementById('previewBtn').addEventListener('click', () => {
+        const files = document.getElementById('shapefileUpload').files;
+        processShapefilePreview(files);
     });
+    document.getElementById('clearPreviewBtn').addEventListener('click', clearPreview);
 }
 
-function handleFileChange(event, fileType) {
-    const file = event.target.files[0];
-    const infoElement = document.getElementById(`${fileType}-info`);
-    if (file) {
-        const size = (file.size / 1024).toFixed(1);
-        const sizeUnit = size > 1024 ? `${(size / 1024).toFixed(1)} MB` : `${size} KB`;
-        infoElement.textContent = `${file.name} (${sizeUnit})`;
-        infoElement.style.color = '#28a745';
-    } else {
-        infoElement.textContent = '';
+function handleFileSelection(event) {
+    const files = event.target.files;
+    const fileListElement = document.getElementById('fileList');
+    fileListElement.innerHTML = '';
+
+    if (files.length > 0) {
+        const list = document.createElement('ul');
+        const baseName = files[0].name.split('.').slice(0, -1).join('.');
+        let allNamesMatch = true;
+
+        for (const file of files) {
+            const currentBaseName = file.name.split('.').slice(0, -1).join('.');
+            if (currentBaseName !== baseName) {
+                allNamesMatch = false;
+            }
+            const listItem = document.createElement('li');
+            listItem.textContent = file.name;
+            list.appendChild(listItem);
+        }
+        fileListElement.appendChild(list);
+
+        if (!allNamesMatch) {
+            fileListElement.innerHTML += '<p class="error">Erro: Todos os arquivos selecionados devem ter o mesmo nome base (ex: Fazenda.shp, Fazenda.shx).</p>';
+            document.getElementById('submitBtn').disabled = true;
+            return;
+        }
     }
-    
-    if (['shp', 'shx', 'dbf'].includes(fileType)) {
-        clearPreview();
-    }
+    document.getElementById('submitBtn').disabled = false;
     checkPreviewAvailability();
 }
 
 function checkPreviewAvailability() {
-    const shpFile = document.getElementById('shp').files[0];
-    const shxFile = document.getElementById('shx').files[0];
-    const dbfFile = document.getElementById('dbf').files[0];
+    const files = document.getElementById('shapefileUpload').files;
     const previewBtn = document.getElementById('previewBtn');
+    const requiredExts = ['shp', 'shx', 'dbf'];
+    const availableExts = Array.from(files).map(f => f.name.split('.').pop().toLowerCase());
     
-    if (shpFile && shxFile && dbfFile) {
+    const hasRequiredFiles = requiredExts.every(ext => availableExts.includes(ext));
+
+    if (hasRequiredFiles) {
         previewBtn.classList.remove('hidden');
         previewBtn.disabled = false;
     } else {
@@ -67,9 +77,29 @@ function checkPreviewAvailability() {
 async function handleShapefileUpload(e) {
     e.preventDefault();
     const form = e.target;
-    const formData = new FormData(form);
     const statusElement = document.getElementById('uploadStatus');
     const submitBtn = document.getElementById('submitBtn');
+    const files = document.getElementById('shapefileUpload').files;
+
+    const formData = new FormData();
+    formData.append('propriedade_col', form.elements.propriedade_col.value);
+    formData.append('talhao_col', form.elements.talhao_col.value);
+
+    const extensionToFieldMap = {
+        'shp': 'shp',
+        'shx': 'shx',
+        'dbf': 'dbf',
+        'prj': 'prj',
+        'cpg': 'cpg'
+    };
+
+    for (const file of files) {
+        const extension = file.name.split('.').pop().toLowerCase();
+        const fieldName = extensionToFieldMap[extension];
+        if (fieldName) {
+            formData.append(fieldName, file);
+        }
+    }
 
     statusElement.innerHTML = '<div class="info"><span class="loading-spinner"></span>Enviando...</div>';
     submitBtn.disabled = true;
@@ -84,11 +114,8 @@ async function handleShapefileUpload(e) {
             </div>
         `;
         statusElement.innerHTML = successMessage;
-        await loadUserROIs();
         form.reset();
-        ['shp', 'shx', 'dbf', 'prj', 'cpg'].forEach(type => {
-            document.getElementById(`${type}-info`).textContent = '';
-        });
+        document.getElementById('fileList').innerHTML = '';
         clearPreview();
         checkPreviewAvailability();
     } catch (error) {

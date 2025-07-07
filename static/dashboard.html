@@ -35,29 +35,10 @@
                 <input type="text" id="talhao_col" name="talhao_col" required placeholder="Ex: TALHAO">
             </div>
             <div>
-                <label for="shp">Arquivo .shp:</label>
-                <input type="file" id="shp" name="shp" accept=".shp" required>
-                <div class="file-info" id="shp-info"></div>
-            </div>
-            <div>
-                <label for="shx">Arquivo .shx:</label>
-                <input type="file" id="shx" name="shx" accept=".shx" required>
-                <div class="file-info" id="shx-info"></div>
-            </div>
-            <div>
-                <label for="dbf">Arquivo .dbf:</label>
-                <input type="file" id="dbf" name="dbf" accept=".dbf" required>
-                <div class="file-info" id="dbf-info"></div>
-            </div>
-            <div>
-                 <label for="prj">Arquivo .prj (opcional):</label>
-                <input type="file" id="prj" name="prj" accept=".prj">
-                <div class="file-info" id="prj-info"></div>
-            </div>
-            <div>
-                <label for="cpg">Arquivo .cpg (opcional):</label>
-                 <input type="file" id="cpg" name="cpg" accept=".cpg">
-                <div class="file-info" id="cpg-info"></div>
+                <label for="shapefileUpload">Arquivos Shapefile:</label>
+                <input type="file" id="shapefileUpload" name="shapefiles" 
+                       accept=".shp,.shx,.dbf,.prj,.cpg" multiple required>
+                <div id="fileList" class="file-list-container"></div>
             </div>
             <div class="preview-controls">
                 <button type="button" id="previewBtn" class="hidden" disabled>
@@ -84,12 +65,18 @@
         <div id="roiList">
             <p>Carregando suas ROIs...</p>
         </div>
+        <div id="paginationControls" class="pagination-controls" style="margin-top: 1rem; text-align: center;">
+            <button id="prevPageBtn" disabled>&laquo; Anterior</button>
+            <span style="margin: 0 15px;">Página <span id="currentPageSpan">1</span></span>
+            <button id="nextPageBtn">Próximo &raquo;</button>
+        </div>
         <div id="roiDetails" class="hidden">
             <h3>Detalhes da ROI</h3>
             <div id="roiInfo"></div>
             <div id="map"></div>
             <button id="backToList">Voltar para lista</button>
         </div>
+        
     </section>
 
     <div id="editRoiModal" class="modal-overlay" style="display: none;">

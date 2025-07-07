@@ -43,8 +43,8 @@ function displayShapefileInfo(geojson) {
     shapefileInfo.classList.remove('hidden');
 }
 
-export function processShapefilePreview() {
-    if (isPreviewLoading) return;
+export function processShapefilePreview(files) { 
+    if (isPreviewLoading || !files || files.length === 0) return;
     isPreviewLoading = true;
     
     const statusElement = document.getElementById('uploadStatus');
@@ -55,19 +55,7 @@ export function processShapefilePreview() {
     previewBtn.disabled = true;
     spinner.classList.remove('hidden');
 
-    const files = {
-        shp: document.getElementById('shp').files[0],
-        shx: document.getElementById('shx').files[0],
-        dbf: document.getElementById('dbf').files[0],
-        prj: document.getElementById('prj').files[0]
-    };
-
-    const shpUrl = URL.createObjectURL(files.shp);
-    const shxUrl = URL.createObjectURL(files.shx);
-    const dbfUrl = URL.createObjectURL(files.dbf);
-    const prjUrl = files.prj ? URL.createObjectURL(files.prj) : null;
-    const fileUrls = [shpUrl, shxUrl, dbfUrl];
-    if (prjUrl) fileUrls.push(prjUrl);
+    const fileUrls = Array.from(files).map(file => URL.createObjectURL(file));
 
     shp.combine(fileUrls).then(geojson => {
         currentShapefileData = geojson;
@@ -104,9 +92,6 @@ export function processShapefilePreview() {
         isPreviewLoading = false;
         previewBtn.disabled = false;
         spinner.classList.add('hidden');
-        URL.revokeObjectURL(shpUrl);
-        URL.revokeObjectURL(shxUrl);
-        URL.revokeObjectURL(dbfUrl);
-        if (prjUrl) URL.revokeObjectURL(prjUrl);
+        fileUrls.forEach(url => URL.revokeObjectURL(url));
     });
 }
