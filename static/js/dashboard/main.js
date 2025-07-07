@@ -19,6 +19,14 @@ function setupEventListeners() {
     
     document.getElementById('shapefileUpload').addEventListener('change', handleFileSelection);
 
+    const logoutButton = document.getElementById('logoutBtn');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', (e) => {
+            e.preventDefault(); // Impede o comportamento padrão do link
+            logout(); // Chama a função de logout importada
+        });
+    }
+
     document.getElementById('previewBtn').addEventListener('click', () => {
         const files = document.getElementById('shapefileUpload').files;
         processShapefilePreview(files);
