@@ -1,3 +1,5 @@
+import { logout } from './auth-session.js';
+
 const BASE_URL = '/api/v1';
 
 async function fetchApi(url, options = {}) {
@@ -7,6 +9,14 @@ async function fetchApi(url, options = {}) {
     };
 
     const response = await fetch(`${BASE_URL}${url}`, { ...options, headers });
+
+    if (response.status === 401) {
+    // Se o token for inválido/expirado, o servidor retorna 401.
+    // Forçamos o logout e interrompemos a execução.
+    logout();
+    // Lançamos um erro para parar a cadeia de promessas.
+    throw new Error('Sessão expirada. Você foi desconectado.');
+    }
 
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Erro desconhecido na resposta da API.' }));
