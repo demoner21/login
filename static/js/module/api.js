@@ -16,8 +16,8 @@ async function fetchApi(url, options = {}) {
     return response;
 }
 
-export async function fetchUserROIs() {
-    const response = await fetchApi('/roi/');
+export async function fetchUserROIs(limit, offset) {
+    const response = await fetchApi(`/roi/?limit=${limit}&offset=${offset}`);
     return await response.json();
 }
 

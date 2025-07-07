@@ -4,6 +4,11 @@ import { fillEditModal } from '../module/ui-handlers.js';
 
 let roiMap;
 
+// --- INÍCIO DAS VARIÁVEIS DE ESTADO DA PAGINAÇÃO ---
+let currentPage = 1;
+const ROIS_PER_PAGE = 10; // Deve corresponder ao 'limit' padrão do backend
+// --- FIM DAS VARIÁVEIS DE ESTADO DA PAGINAÇÃO ---
+
 async function openEditModal(roiId) {
     try {
         document.getElementById('editRoiStatus').innerHTML = '';
@@ -19,7 +24,7 @@ async function deleteROI(roiId) {
     try {
         await deleteUserROI(roiId);
         alert('ROI excluída com sucesso!');
-        loadUserROIs();
+        loadUserROIs(); // Recarrega a página atual
     } catch (error) {
         alert(error.message);
     }
@@ -27,10 +32,14 @@ async function deleteROI(roiId) {
 
 function displayROIList(rois) {
     const roiListElement = document.getElementById('roiList');
-    if (rois.length === 0) {
+    if (rois.length === 0 && currentPage === 1) {
         roiListElement.innerHTML = '<p>Você ainda não tem ROIs cadastradas.</p>';
+        document.getElementById('paginationControls').classList.add('hidden'); // Esconde controles se não houver ROIs
         return;
     }
+    
+    document.getElementById('paginationControls').classList.remove('hidden');
+    
     let html = '<ul>';
     rois.forEach(roi => {
         html += `
@@ -60,9 +69,11 @@ async function viewROIDetails(roiId) {
     }
 }
 
+// ... a função displayROIDetails continua a mesma ...
 function displayROIDetails(roi) {
     // 1. Prepara a interface, escondendo a lista e mostrando a área de detalhes
     document.getElementById('roiList').classList.add('hidden');
+    document.getElementById('paginationControls').classList.add('hidden'); // Esconde paginação na tela de detalhes
     document.getElementById('roiDetails').classList.remove('hidden');
 
     // 2. Exibe as informações textuais da Propriedade principal
@@ -75,8 +86,7 @@ function displayROIDetails(roi) {
             </button>
         </div>
     `;
-
-    // 3. Gerencia o estado da seleção de múltiplos talhões
+    // ... (o resto da função não muda)
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
@@ -87,33 +97,22 @@ function displayROIDetails(roi) {
         const containerAcoes = document.getElementById('lote-actions');
         containerAcoes.style.display = totalSelecionados > 0 ? 'block' : 'none';
     };
-
     btnProcessarLote.onclick = () => {
-        // Esta função deve ser implementada para chamar a API de processamento em lote
         downloadSentinelImagesForLote(Array.from(talhoesSelecionados));
     };
 
-    // 4. Garante a limpeza e reinicialização correta do mapa para evitar erros
     if (window.roiMap) {
         window.roiMap.remove();
         window.roiMap = null;
     }
-    // A variável global window.roiMap agora conterá um objeto de mapa válido.
     window.roiMap = initializeMapWithLayers('map'); 
 
-    // 5. Renderiza os talhões no mapa se a geometria for uma FeatureCollection válida
     if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
-        
-        // Define os estilos para os diferentes estados visuais dos talhões
         const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
         const estiloHover = { weight: 4, fillOpacity: 0.5 };
         const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
-
-        // 6. Cria a camada GeoJSON, que itera sobre cada 'feature' (talhão)
         const roiLayer = L.geoJSON(roi.geometria, {
             style: estiloPadrao,
-            
-            // onEachFeature é a função chave para adicionar interatividade a cada talhão
             onEachFeature: function(feature, layer) {
                 const props = feature.properties;
                 const talhaoNumero = props.nome_talhao || 'N/A';
@@ -121,7 +120,6 @@ function displayROIDetails(roi) {
                 const areaHa = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : 'N/A';
                 const talhaoId = props.roi_id;
 
-                // Cria o tooltip de hover com as informações do talhão
                 const tooltipContent = `
                     <strong>Talhão:</strong> ${talhaoNumero}<br>
                     <strong>Variedade:</strong> ${variedade}<br>
@@ -129,27 +127,21 @@ function displayROIDetails(roi) {
                 `;
                 layer.bindTooltip(tooltipContent);
 
-                // Adiciona o evento de clique para selecionar/desselecionar
                 layer.on('click', () => {
-                    if (!talhaoId) {
-                        console.error("Tentativa de selecionar talhão sem 'roi_id'.", feature);
-                        return;
-                    }
+                    if (!talhaoId) return;
                     if (talhoesSelecionados.has(talhaoId)) {
                         talhoesSelecionados.delete(talhaoId);
-                        layer.setStyle(estiloPadrao); // Volta ao estilo padrão
+                        layer.setStyle(estiloPadrao); 
                     } else {
                         talhoesSelecionados.add(talhaoId);
-                        layer.setStyle(estiloSelecionado); // Aplica estilo de selecionado
+                        layer.setStyle(estiloSelecionado); 
                     }
                     atualizarBotaoLote();
                 });
 
-                // Adiciona eventos de mouse para o destaque visual (hover)
                 layer.on({
                     mouseover: (e) => e.target.setStyle(estiloHover),
                     mouseout: (e) => {
-                        // Só reseta o estilo se o talhão não estiver selecionado
                         if (!talhoesSelecionados.has(talhaoId)) {
                             roiLayer.resetStyle(e.target);
                         }
@@ -158,26 +150,54 @@ function displayROIDetails(roi) {
             }
         }).addTo(window.roiMap);
 
-        // 7. Ajusta o zoom do mapa para enquadrar todos os talhões
         if (roiLayer.getBounds().isValid()) {
             window.roiMap.fitBounds(roiLayer.getBounds());
         }
-
     } else {
         console.warn("A geometria recebida não é uma FeatureCollection ou está vazia.", roi);
     }
 }
 
+
+/**
+ * Atualiza o estado dos botões de paginação (ativado/desativado).
+ * @param {Array} rois A lista de ROIs retornada pela API.
+ */
+function updatePaginationControls(rois) {
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    
+    // Desativa o botão "Anterior" se estivermos na primeira página
+    prevPageBtn.disabled = currentPage === 1;
+
+    // Desativa o botão "Próximo" se a API retornou menos itens que o limite
+    // (indicando que esta é a última página)
+    nextPageBtn.disabled = rois.length < ROIS_PER_PAGE;
+    
+    // Atualiza o número da página na UI
+    document.getElementById('currentPageSpan').textContent = currentPage;
+}
+
+/**
+ * Carrega a lista de ROIs para uma página específica.
+ */
 export async function loadUserROIs() {
     const roiListElement = document.getElementById('roiList');
+    roiListElement.innerHTML = '<p>Carregando suas ROIs...</p>';
+    
     try {
-        const rois = await fetchUserROIs();
+        const offset = (currentPage - 1) * ROIS_PER_PAGE;
+        const rois = await fetchUserROIs(ROIS_PER_PAGE, offset);
         displayROIList(rois);
+        updatePaginationControls(rois); // Atualiza os botões após carregar
     } catch (error) {
         roiListElement.innerHTML = `<p class="error">${error.message}</p>`;
     }
 }
 
+/**
+ * Configura os eventos de clique para a lista de ROIs e os novos botões de paginação.
+ */
 export function setupROIEvents() {
     const roiListElement = document.getElementById('roiList');
     roiListElement.addEventListener('click', (e) => {
@@ -195,7 +215,21 @@ export function setupROIEvents() {
 
     document.getElementById('backToList').addEventListener('click', () => {
         document.getElementById('roiList').classList.remove('hidden');
+        document.getElementById('paginationControls').classList.remove('hidden'); // Mostra paginação ao voltar
         document.getElementById('roiDetails').classList.add('hidden');
         if (roiMap) roiMap.remove();
+    });
+    
+    // --- EVENTOS DOS BOTÕES DE PAGINAÇÃO ---
+    document.getElementById('nextPageBtn').addEventListener('click', () => {
+        currentPage++;
+        loadUserROIs();
+    });
+
+    document.getElementById('prevPageBtn').addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            loadUserROIs();
+        }
     });
 }
