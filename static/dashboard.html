@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Multiespectral - Gerenciamento de ROIs</title>
+    <title>Portal Multiespectral - Gerenciamento de Regiões</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/dashboard.css">
 </head>
@@ -12,8 +12,8 @@
         <h1>Portal Multiespectral</h1>
         <nav>
             <a href="#upload">Upload Shapefile</a> |
-            <a href="#visualizar">Minhas ROIs</a> |
-            <a href="#logout">Sair</a>
+            <a href="#visualizar">Minhas Regiões</a> |
+            <a href="#logout" id="logoutBtn">Sair</a>
         </nav>
     </header>
 
@@ -27,11 +27,11 @@
             </div>
 
             <div>
-                <label for="propriedade_col">Indendificação da Propriedade:</label>
+                <label for="propriedade_col">Propriedade:</label>
                 <input type="text" id="propriedade_col" name="propriedade_col" required placeholder="Ex: Fazenda">
             </div>
             <div>
-                 <label for="talhao_col">Indendificação do Talhão:</label>
+                 <label for="talhao_col">Talhão:</label>
                 <input type="text" id="talhao_col" name="talhao_col" required placeholder="Ex: TALHAO">
             </div>
             <div>
@@ -71,7 +71,7 @@
         </div>
     
         <div id="roiList">
-            <p>Carregando suas ROIs...</p>
+            <p>Carregando suas Regiões...</p>
         </div>
     
         <div id="paginationControls" class="pagination-controls" style="margin-top: 1rem; text-align: center;">
