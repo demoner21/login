@@ -1,39 +1,31 @@
-// Importações no topo do arquivo
-import { fetchUserROIs, fetchROIDetails, deleteUserROI, fetchAvailableVarieties } from '../module/api.js';
+import { fetchUserROIs, fetchROIDetails, deleteUserROI, fetchAvailableVarieties, fetchAvailableProperties } from '../module/api.js';
 import { initializeMapWithLayers } from '../module/map-utils.js';
 import { fillEditModal } from '../module/ui-handlers.js';
 import { normalizeName } from '../module/text-normalizer.js';
 
-// Variáveis de estado
 let roiMap;
 let currentPage = 1;
 const ROIS_PER_PAGE = 10;
 let currentSearchTerm = '';
+let currentPropertyFilter = '';
 
 /**
  * Renderiza a lista de ROIs na tela de forma segura, criando elementos DOM.
- * @param {Array} rois - A lista de objetos ROI.
  */
 function displayROIList(rois) {
     const roiListElement = document.getElementById('roiList');
-    // Limpa completamente o conteúdo anterior
-    roiListElement.innerHTML = '';
+    roiListElement.innerHTML = ''; // Limpa completamente o conteúdo anterior
 
     if (rois.length === 0) {
         roiListElement.innerHTML = '<p>Nenhuma ROI encontrada com os filtros atuais.</p>';
         return;
     }
     
-    // Cria um elemento <ul> para a lista
     const list = document.createElement('ul');
-
     rois.forEach(roi => {
         const displayName = (roi.nome_propriedade || roi.nome).replace(/_/g, ' ');
-        
-        // Cria um elemento <li> para cada item
         const listItem = document.createElement('li');
         
-        // Define o HTML interno do item da lista
         listItem.innerHTML = `
             <div>
                 <strong>${displayName}</strong> - ${roi.descricao || 'Sem descrição'}
@@ -45,16 +37,36 @@ function displayROIList(rois) {
                 <button data-roi-id-delete="${roi.roi_id}">Excluir</button>
             </div>
         `;
-        // Adiciona o item <li> à lista <ul>
         list.appendChild(listItem);
     });
 
-    // Adiciona a lista completa <ul> ao container principal
     roiListElement.appendChild(list);
 }
 
 /**
- * Popula o menu dropdown com as variedades disponíveis.
+ * Popula o menu dropdown de Propriedades com os dados da API.
+ */
+async function populatePropertyDropdown() {
+    const selectElement = document.getElementById('propertySelect');
+    try {
+        const propriedades = await fetchAvailableProperties();
+        selectElement.options.length = 1; // Limpa opções antigas
+
+        propriedades.forEach(prop => {
+            if (prop) {
+                const option = document.createElement('option');
+                option.value = prop;
+                option.textContent = prop;
+                selectElement.appendChild(option);
+            }
+        });
+    } catch (error) {
+        console.error("Erro ao popular dropdown de propriedades:", error);
+    }
+}
+
+/**
+ * Popula o menu dropdown de Variedades com os dados da API.
  */
 async function populateVarietyDropdown() {
     const selectElement = document.getElementById('varietySelect');
@@ -76,7 +88,7 @@ async function populateVarietyDropdown() {
 }
 
 /**
- * Carrega as ROIs da API e comanda a atualização da UI.
+ * Carrega as ROIs da API com base nos filtros e paginação atuais e atualiza a UI.
  */
 export async function loadUserROIs() {
     const roiListElement = document.getElementById('roiList');
@@ -85,7 +97,7 @@ export async function loadUserROIs() {
     
     try {
         const offset = (currentPage - 1) * ROIS_PER_PAGE;
-        const responseData = await fetchUserROIs(ROIS_PER_PAGE, offset, currentSearchTerm);
+        const responseData = await fetchUserROIs(ROIS_PER_PAGE, offset, currentSearchTerm, currentPropertyFilter);
         
         totalCountElement.textContent = responseData.total;
         displayROIList(responseData.rois);
@@ -93,36 +105,47 @@ export async function loadUserROIs() {
     } catch (error) {
         roiListElement.innerHTML = `<p class="error">${error.message}</p>`;
         totalCountElement.textContent = '0';
-        document.getElementById('paginationControls').style.display = 'none';
+        
+        const paginationControls = document.getElementById('paginationControls');
+        if (paginationControls) {
+            paginationControls.classList.add('hidden');
+        }
     }
 }
 
 /**
- * Configura todos os eventos de clique da página.
+ * Configura todos os eventos de interação da página de ROIs.
  */
 export function setupROIEvents() {
-    // Popula o dropdown assim que a UI é configurada
+    populatePropertyDropdown();
     populateVarietyDropdown();
 
     document.getElementById('roiList').addEventListener('click', (e) => {
         const target = e.target;
         if (target.matches('[data-roi-id-view]')) {
             viewROIDetails(target.dataset.roiIdView);
-        }
-        if (target.matches('[data-roi-id-edit]')) {
+        } else if (target.matches('[data-roi-id-edit]')) {
             openEditModal(target.dataset.roiIdEdit);
-        }
-        if (target.matches('[data-roi-id-delete]')) {
+        } else if (target.matches('[data-roi-id-delete]')) {
             deleteROI(target.dataset.roiIdDelete);
         }
     });
 
+    // Event listener para o filtro de Propriedade
+    document.getElementById('propertySelect').addEventListener('change', (e) => {
+        currentPropertyFilter = e.target.value;
+        currentPage = 1;
+        loadUserROIs();
+    });
+
+    // Event listener para o filtro de Variedade
     document.getElementById('varietySelect').addEventListener('change', (e) => {
         currentSearchTerm = e.target.value;
         currentPage = 1;
         loadUserROIs();
     });
 
+    // Event listeners para os botões de paginação
     document.getElementById('nextPageBtn').addEventListener('click', () => {
         currentPage++;
         loadUserROIs();
@@ -135,10 +158,22 @@ export function setupROIEvents() {
         }
     });
 
+    // Event listener para o botão "Voltar para lista" na tela de detalhes
     document.getElementById('backToList').addEventListener('click', () => {
+        const filtersContainer = document.getElementById('roiFilters');
+        if (filtersContainer) {
+            filtersContainer.classList.remove('hidden');
+        }
+        
         document.getElementById('roiList').classList.remove('hidden');
-        updatePaginationControls(parseInt(document.getElementById('roiTotalCount').textContent, 10)); 
         document.getElementById('roiDetails').classList.add('hidden');
+
+        // Reabilita os filtros
+        document.getElementById('propertySelect').disabled = false;
+        document.getElementById('varietySelect').disabled = false;
+
+        updatePaginationControls(parseInt(document.getElementById('roiTotalCount').textContent, 10));
+
         if (roiMap) {
             roiMap.remove();
             roiMap = null;
@@ -146,14 +181,14 @@ export function setupROIEvents() {
     });
 }
 
-
-// As funções abaixo (deleteROI, openEditModal, viewROIDetails, updatePaginationControls, etc.)
-// devem ser mantidas como nas versões anteriores, pois sua lógica interna está correta.
-// Apenas as colei aqui para garantir que você tenha o arquivo completo e correto.
-
+/**
+ * Abre o modal de edição com os dados da ROI especificada.
+ */
 async function openEditModal(roiId) {
     try {
-        document.getElementById('editRoiStatus').innerHTML = '';
+        const statusElement = document.getElementById('editRoiStatus');
+        if (statusElement) statusElement.innerHTML = '';
+        
         const roi = await fetchROIDetails(roiId);
         fillEditModal(roi);
     } catch (error) {
@@ -161,8 +196,12 @@ async function openEditModal(roiId) {
     }
 }
 
+/**
+ * Deleta uma ROI após confirmação do usuário.
+ */
 async function deleteROI(roiId) {
     if (!confirm('Tem certeza que deseja excluir esta ROI?')) return;
+
     try {
         await deleteUserROI(roiId);
         alert('ROI excluída com sucesso!');
@@ -172,6 +211,9 @@ async function deleteROI(roiId) {
     }
 }
 
+/**
+ * Atualiza a visibilidade e o estado dos controles de paginação.
+ */
 function updatePaginationControls(totalRois) {
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
@@ -179,16 +221,21 @@ function updatePaginationControls(totalRois) {
     const paginationControls = document.getElementById('paginationControls');
     const totalPages = Math.ceil(totalRois / ROIS_PER_PAGE);
 
-    if (totalPages > 0) {
-        paginationControls.classList.remove('hidden');
-        currentPageSpan.textContent = currentPage;
-        prevPageBtn.disabled = currentPage === 1;
-        nextPageBtn.disabled = currentPage >= totalPages;
-    } else {
-        paginationControls.classList.add('hidden');
+    if (paginationControls) {
+        if (totalPages > 1) {
+            paginationControls.classList.remove('hidden');
+            currentPageSpan.textContent = currentPage;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        } else {
+            paginationControls.classList.add('hidden');
+        }
     }
 }
 
+/**
+ * Busca os detalhes de uma ROI e chama a função para exibi-los.
+ */
 async function viewROIDetails(roiId) {
     try {
         const roi = await fetchROIDetails(roiId);
@@ -198,10 +245,23 @@ async function viewROIDetails(roiId) {
     }
 }
 
+/**
+ * Exibe a tela de detalhes para uma ROI específica.
+*/
 function displayROIDetails(roi) {
+    const filtersContainer = document.getElementById('roiFilters');
+    if (filtersContainer) {
+        filtersContainer.classList.add('hidden');
+    }
+
     document.getElementById('roiList').classList.add('hidden');
     document.getElementById('paginationControls').classList.add('hidden');
     document.getElementById('roiDetails').classList.remove('hidden');
+
+    // Desabilita os filtros
+    document.getElementById('propertySelect').disabled = true;
+    document.getElementById('varietySelect').disabled = true;
+
     document.getElementById('roiInfo').innerHTML = `
         <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
         <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
@@ -211,27 +271,35 @@ function displayROIDetails(roi) {
             </button>
         </div>
     `;
+
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
+    
     const atualizarBotaoLote = () => {
         const totalSelecionados = talhoesSelecionados.size;
         contadorLote.textContent = totalSelecionados;
         const containerAcoes = document.getElementById('lote-actions');
         containerAcoes.style.display = totalSelecionados > 0 ? 'block' : 'none';
     };
+
     btnProcessarLote.onclick = () => {
         console.log("Processando talhões:", Array.from(talhoesSelecionados));
+        // Aqui você chamaria a API para processar o lote
     };
+
     if (window.roiMap) {
         window.roiMap.remove();
         window.roiMap = null;
     }
+
     window.roiMap = initializeMapWithLayers('map');
+    
     if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
         const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
         const estiloHover = { weight: 4, fillOpacity: 0.5 };
         const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
+
         const roiLayer = L.geoJSON(roi.geometria, {
             style: estiloPadrao,
             onEachFeature: function(feature, layer) {
@@ -240,7 +308,9 @@ function displayROIDetails(roi) {
                 const variedade = props.variedade || 'N/A';
                 const areaHa = props.area_ha ? `${props.area_ha.toFixed(2)} ha` : 'N/A';
                 const talhaoId = props.roi_id;
+
                 layer.bindTooltip(`<strong>Talhão:</strong> ${talhaoNumero}<br><strong>Variedade:</strong> ${variedade}<br><strong>Área:</strong> ${areaHa}`);
+                
                 layer.on('click', () => {
                     if (!talhaoId) return;
                     if (talhoesSelecionados.has(talhaoId)) {
@@ -252,6 +322,7 @@ function displayROIDetails(roi) {
                     }
                     atualizarBotaoLote();
                 });
+
                 layer.on({
                     mouseover: (e) => e.target.setStyle(estiloHover),
                     mouseout: (e) => {
@@ -262,6 +333,7 @@ function displayROIDetails(roi) {
                 });
             }
         }).addTo(window.roiMap);
+
         if (roiLayer.getBounds().isValid()) {
             window.roiMap.fitBounds(roiLayer.getBounds());
         }

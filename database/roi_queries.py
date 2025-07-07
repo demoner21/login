@@ -271,7 +271,8 @@ async def listar_rois_usuario(
     limit: int = 10,
     offset: int = 0,
     apenas_propriedades: bool = True,
-    filtro_variedade: Optional[str] = None
+    filtro_variedade: Optional[str] = None,
+    filtro_propriedade: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Lista as ROIs de um usuário com filtros, contagem total e paginação.
@@ -280,15 +281,17 @@ async def listar_rois_usuario(
     try:
         # --- Construção da Query Base e Cláusulas WHERE ---
         where_clauses = ["user_id = $1", "tipo_roi = 'PROPRIEDADE'"]
-        # Parâmetros para a query de contagem
         count_params = [user_id]
-        # Parâmetros para a query de dados
         data_params = [user_id]
 
+        if filtro_propriedade:
+            # Adiciona o filtro de propriedade exata
+            propriedade_filter_clause = f"nome_propriedade = ${len(data_params) + 1}"
+            where_clauses.append(propriedade_filter_clause)
+            count_params.append(filtro_propriedade)
+            data_params.append(filtro_propriedade)
+
         if filtro_variedade:
-            # Adiciona o filtro de variedade à cláusula WHERE e aos parâmetros
-            # Usa ILIKE para busca case-insensitive
-            # O índice do parâmetro é dinâmico para evitar erros
             variedade_filter_clause = f"""
             EXISTS (
                 SELECT 1 FROM regiao_de_interesse talhoes
@@ -454,6 +457,27 @@ async def deletar_roi(conn, roi_id: int, user_id: int) -> bool:
         return result == "DELETE 1"
     except Exception as e:
         logger.error(f"Erro ao deletar ROI: {str(e)}", exc_info=True)
+        raise
+
+@with_db_connection
+async def listar_propriedades_unicas(conn, user_id: int) -> List[str]:
+    """
+    Busca e retorna uma lista de nomes de propriedades únicos para um usuário.
+    """
+    try:
+        query = """
+            SELECT DISTINCT nome_propriedade
+            FROM regiao_de_interesse
+            WHERE user_id = $1
+              AND tipo_roi = 'PROPRIEDADE'
+              AND nome_propriedade IS NOT NULL
+              AND TRIM(nome_propriedade) <> ''
+            ORDER BY nome_propriedade;
+        """
+        results = await conn.fetch(query, user_id)
+        return [row['nome_propriedade'] for row in results]
+    except Exception as e:
+        logger.error(f"Erro ao listar propriedades únicas: {str(e)}", exc_info=True)
         raise
 
 @with_db_connection

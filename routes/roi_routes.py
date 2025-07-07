@@ -16,7 +16,8 @@ from database.roi_queries import (
     atualizar_roi,
     deletar_roi,
     listar_talhoes_por_propriedade,
-    listar_variedades_unicas
+    listar_propriedades_unicas,
+    listar_variedades_unicas    
 )
 
 router = APIRouter(
@@ -310,6 +311,7 @@ async def listar_minhas_rois(
     current_user: dict = Depends(get_current_user),
     limit: int = 10,
     offset: int = 0,
+    propriedade: Optional[str] = Query(None, description="Filtra por um nome de propriedade específico"),
     variedade: Optional[str] = Query(None, description="Filtra propriedades pela variedade do talhão")
 ):
     """Lista todas as ROIs do usuário com paginação, filtros e contagem total."""
@@ -319,6 +321,7 @@ async def listar_minhas_rois(
             limit=limit,
             offset=offset,
             apenas_propriedades=True,
+            filtro_propriedade=propriedade,
             filtro_variedade=variedade
         )
         return response_data
@@ -327,6 +330,22 @@ async def listar_minhas_rois(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro ao listar regiões de interesse"
+        )
+
+@router.get("/propriedades-disponiveis", response_model=List[str], summary="Lista as propriedades únicas do usuário")
+async def get_propriedades_disponiveis(current_user: dict = Depends(get_current_user)):
+    """
+    Endpoint para obter uma lista de todas as propriedades únicas de um usuário,
+    para popular um menu dropdown de filtro.
+    """
+    try:
+        propriedades = await listar_propriedades_unicas(user_id=current_user['id'])
+        return propriedades
+    except Exception as e:
+        logger.error(f"Erro ao buscar propriedades: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao buscar lista de propriedades"
         )
 
 @router.get("/variedades-disponiveis", response_model=List[str], summary="Lista as variedades únicas do usuário")

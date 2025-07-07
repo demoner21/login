@@ -63,11 +63,19 @@
     <section id="visualizar">
         <h2>Minhas Regiões de Interesse (<span id="roiTotalCount">0</span>)</h2>
     
-        <div class="search-container" style="margin-bottom: 1rem;">
-            <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
-            <select id="varietySelect">
-                <option value="">-- Todas as Variedades --</option>
+        <div id="roiFilters" class="search-container" style="margin-bottom: 1rem; display: flex; gap: 20px;">
+            <div>
+                <label for="propertySelect" style="display: block; margin-bottom: 5px;">Filtrar por Propriedade:</label>
+                <select id="propertySelect">
+                    <option value="">-- Todas as Propriedades --</option>
                 </select>
+            </div>
+            <div>
+                <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
+                <select id="varietySelect">
+                    <option value="">-- Todas as Variedades --</option>
+                </select>
+            </div>
         </div>
     
         <div id="roiList">
