@@ -77,24 +77,10 @@ def generate_roi_name(base_name: str, identifier: str, type_prefix: str) -> str:
     return f"{type_prefix}_{clean_base}_{clean_identifier}_{timestamp}"
 
 def process_roi_data(roi_dict: dict) -> dict:
-    processed = dict(roi_dict)
-    if processed.get('geometria') and isinstance(processed['geometria'], str):
-        try:
-            processed['geometria'] = json.loads(processed['geometria'])
-        except (json.JSONDecodeError, TypeError):
-            processed['geometria'] = None
-    if processed.get('metadata') and isinstance(processed['metadata'], str):
-        try:
-            processed['metadata'] = json.loads(processed['metadata'])
-        except (json.JSONDecodeError, TypeError):
-            processed['metadata'] = {}
-    return processed
-
-VALID_STATUS_VALUES = ["ativo", "inativo", "processando", "erro"]
-
-
-def process_roi_data(roi_dict: dict) -> dict:
     """Processa os dados da ROI para garantir o formato correto dos campos JSON"""
+    if not isinstance(roi_dict, dict):
+        return {}
+        
     processed = dict(roi_dict)
     
     # Lida com a geometria
@@ -102,7 +88,7 @@ def process_roi_data(roi_dict: dict) -> dict:
         try:
             processed['geometria'] = json.loads(processed['geometria'])
         except (json.JSONDecodeError, TypeError):
-            logger.warning(f"Erro ao decodificar geometria para ROI {processed.get('roi_id')}")
+            logger.warning(f"Erro ao decodificar geometria para ROI {processed.get('roi_id')}") # [cite: 109]
             processed['geometria'] = None
     
     # Lida com os metadados
@@ -110,11 +96,12 @@ def process_roi_data(roi_dict: dict) -> dict:
         try:
             processed['metadata'] = json.loads(processed['metadata'])
         except (json.JSONDecodeError, TypeError):
-            logger.warning(f"Erro ao decodificar metadata para ROI {processed.get('roi_id')}")
+            logger.warning(f"Erro ao decodificar metadata para ROI {processed.get('roi_id')}") # [cite: 110]
             processed['metadata'] = {}
     
     return processed
 
+VALID_STATUS_VALUES = ["ativo", "inativo", "processando", "erro"]
 
 # --- Funções Auxiliares ---
 
@@ -199,6 +186,9 @@ async def create_rois_from_shapefile_by_property(
     files = {'shp': shp, 'shx': shx, 'dbf': dbf, 'prj': prj, 'cpg': cpg}
     temp_dir = None
     try:
+        
+        validate_shapefile_files(files)
+
         temp_dir = save_uploaded_files([f for f in files.values() if f])
         
         # Lógica de processamento HIERÁRQUICA

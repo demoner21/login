@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import os
 import time
 from fastapi import Request
@@ -5,23 +6,24 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 from jose import jwt, JWTError
 from datetime import timedelta
-from dotenv import load_dotenv
 
 from utils.jwt_utils import SECRET_KEY, ALGORITHM, create_access_token
 
 load_dotenv()
 
-REFRESH_THRESHOLD_MINUTES = int(os.getenv("REFRESH_THRESHOLD_MINUTES", 5))
+REFRESH_THRESHOLD_MINUTES = int(os.getenv("REFRESH_THRESHOLD_MINUTES"))
 
 class TokenRefreshMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
 
         excluded_paths = ["/api/v1/auth/token", "/api/v1/auth/logout"]
-        if request.url.path in excluded_paths:
+        if any(request.url.path.startswith(p) for p in excluded_paths):
             return response
 
-        if response.status_code and 200 <= response.status_code < 300:
+        token = request.cookies.get("access_token")
+
+        if token and response.status_code < 400:
             token = request.headers.get("Authorization")
 
             if token:

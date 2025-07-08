@@ -1,6 +1,5 @@
 from functools import wraps
 import asyncpg
-from dotenv import load_dotenv
 import logging
 import os
 from utils.exception_utils import handle_exceptions
@@ -12,7 +11,6 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Carrega as variáveis de ambiente do arquivo .env
-load_dotenv()
 
 # Configurações do banco de dados
 DB_CONFIG = {
