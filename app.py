@@ -2,6 +2,10 @@ import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from routes.auth_routes import router as auth_router
 from routes.roi_routes import router as roi_router
 from utils.logging import setup_logging

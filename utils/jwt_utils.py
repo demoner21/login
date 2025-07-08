@@ -1,15 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from typing import Union, Optional
 from pydantic import BaseModel
-from dotenv import load_dotenv
 import os
 from fastapi import Depends, HTTPException, status, Cookie
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from database.database import get_user_by_email
 
-# Carregar variáveis de ambiente
-load_dotenv()
 
 # Configuração JWT
 SECRET_KEY = os.getenv("SECRET_KEY")
