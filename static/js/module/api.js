@@ -2,34 +2,29 @@ import { logout } from './auth-session.js';
 
 const BASE_URL = '/api/v1';
 
-async function fetchApi(url, options = {}) {
+export async function fetchApi(url, options = {}) {
     const headers = {
-        'Authorization': 'Bearer ' + localStorage.getItem('access_token'),
         ...options.headers,
     };
 
-    const response = await fetch(`${BASE_URL}${url}`, { ...options, headers });
+    const config = { 
+        ...options, 
+        headers,
+        credentials: 'include' 
+    };
 
-    // 1. Lógica de renovação de token (sessão deslizante)
-    const refreshedToken = response.headers.get('X-Access-Token-Refreshed');
-    if (refreshedToken) {
-        console.log('Sessão renovada. Novo token armazenado.');
-        localStorage.setItem('access_token', refreshedToken);
-    }
-
-    // 2. Tratamento de erro de autenticação (token expirado/inválido)
+    const response = await fetch(`${BASE_URL}${url}`, config);
+    
     if (response.status === 401) {
         logout();
         throw new Error('Sessão expirada. Você foi desconectado.');
     }
 
-    // 3. Tratamento de outros erros da API
     if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Erro desconhecido na resposta da API.' }));
         throw new Error(error.detail || `Falha na requisição: ${response.statusText}`);
     }
 
-    // 4. Retorna a resposta JSON ou a resposta bruta se não houver conteúdo
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("application/json")) {
         return response.json();
@@ -78,10 +73,8 @@ export async function deleteUserROI(roiId) {
 export async function uploadShapefile(formData) {
     const response = await fetch(`${BASE_URL}/roi/upload-shapefile-splitter`, {
         method: 'POST',
-        headers: {
-            'Authorization': 'Bearer ' + localStorage.getItem('access_token')
-        },
-        body: formData
+        body: formData,
+        credentials: 'include'
     });
 
     if (response.status === 401) {
