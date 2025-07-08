@@ -509,3 +509,24 @@ async def listar_variedades_unicas(conn, user_id: int) -> List[str]:
     except Exception as e:
         logger.error(f"Erro ao listar variedades únicas: {str(e)}", exc_info=True)
         raise
+
+@with_db_connection
+async def listar_talhoes_por_variedade(conn, user_id: int, variedade: str) -> List[Dict]:
+    """
+    Busca os dados (id, nome, geometria) de todos os talhões de um usuário 
+    que correspondem a uma variedade específica.
+    """
+    query = """
+        SELECT 
+            roi_id, 
+            nome_talhao, 
+            ST_AsGeoJSON(geometria)::json as geometria
+        FROM regiao_de_interesse
+        WHERE user_id = $1
+          AND tipo_roi = 'TALHAO'
+          AND metadata->>'variedade' ILIKE $2;
+    """ #
+    results = await conn.fetch(query, user_id, f"%{variedade}%")
+    
+    # Retorna uma lista de dicionários, cada um representando um talhão
+    return [dict(row) for row in results]

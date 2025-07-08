@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 import json
 import logging
@@ -8,6 +8,12 @@ from services.shapefile_service import ShapefileSplitterProcessor
 from utils.jwt_utils import get_current_user
 from utils.upload_utils import save_uploaded_files, cleanup_temp_files
 from pydantic import BaseModel, Field
+
+from services.earth_engine_service import gee_service
+
+from shapely.geometry import shape, mapping
+from shapely.ops import unary_union
+from database.roi_queries import listar_talhoes_por_variedade
 
 from database.roi_queries import (
     criar_propriedade_e_talhoes,
@@ -69,6 +75,18 @@ class LoteProcessamentoRequest(BaseModel):
 class ROIListResponse(BaseModel):
     total: int
     rois: List[ROIResponse]
+
+class DownloadRequest(BaseModel):
+    start_date: date = Field(..., description="Data de início (YYYY-MM-DD) para a busca de imagens.")
+    end_date: date = Field(..., description="Data de fim (YYYY-MM-DD) para a busca de imagens.")
+    scale: Optional[int] = Field(10, description="Escala da imagem em metros.")
+
+class VarietyDownloadResult(BaseModel):
+    roi_id: int
+    nome_talhao: str
+    download_url: str
+    status: str
+    error_message: Optional[str] = None
 
 def generate_roi_name(base_name: str, identifier: str, type_prefix: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -463,7 +481,6 @@ async def listar_talhoes_da_propriedade(
         talhoes = await listar_talhoes_por_propriedade(propriedade_id, current_user['id'])
         return [process_roi_data(talhao) for talhao in talhoes]
     
-    # --- INÍCIO DA CORREÇÃO ---
     except HTTPException as he:
         # Se for uma HTTPException (como a 404), apenas a levante novamente
         # para que o FastAPI a manipule corretamente.
@@ -475,3 +492,116 @@ async def listar_talhoes_da_propriedade(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno ao listar talhões da propriedade"
         )
+
+@router.post(
+    "/{roi_id}/download",
+    summary="[GEE] Requisita o download de uma imagem para uma ROI",
+    description="Gera e retorna uma URL para download de uma imagem (GeoTIFF) do Sentinel-2, recortada para a geometria da ROI especificada."
+)
+async def request_roi_download(
+    roi_id: int,
+    request_data: DownloadRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Inicia um processo no Google Earth Engine para gerar uma imagem para a ROI.
+    """
+    try:
+        roi = await obter_roi_por_id(roi_id, current_user['id'])
+        if not roi or not roi.get('geometria'):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="ROI não encontrada ou não possui geometria válida."
+            )
+        
+        geometria_para_gee = roi['geometria']
+
+        # Verifica se a geometria é uma FeatureCollection (caso de uma Propriedade com talhões)
+        if geometria_para_gee.get('type') == 'FeatureCollection':
+            features = geometria_para_gee.get('features', [])
+            if not features:
+                raise ValueError("FeatureCollection da propriedade está vazia.")
+            
+            # Extrai a geometria de cada feature e une todas em uma única geometria
+            geometrias_dos_talhoes = [shape(f['geometry']) for f in features]
+            geometria_unificada = unary_union(geometrias_dos_talhoes)
+            geometria_para_gee = mapping(geometria_unificada)
+
+        # Chama o serviço do GEE com a geometria já tratada
+        download_url = gee_service.get_download_url(
+            geometry=geometria_para_gee,
+            start_date=request_data.start_date,
+            end_date=request_data.end_date,
+            scale=request_data.scale
+        )
+        
+        return {
+            "message": "URL de download gerada com sucesso.",
+            "roi_id": roi_id,
+            "roi_name": roi.get('nome'),
+            "download_url": download_url
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Falha no endpoint de download para ROI {roi_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocorreu um erro interno ao processar a requisição no GEE."
+        )
+
+@router.post(
+    "/download-by-variety",
+    summary="[GEE] Requisita o download de imagens individuais para uma variedade",
+    description="Busca todos os talhões de uma variedade e gera uma URL de download para cada um, de forma concorrente.",
+    response_model=List[VarietyDownloadResult] # Define o modelo da resposta
+)
+async def request_variety_download(
+    variedade: str = Form(..., description="Nome da variedade a ser buscada."),
+    start_date: date = Form(..., description="Data de início (YYYY-MM-DD)."),
+    end_date: date = Form(..., description="Data de fim (YYYY-MM-DD)."),
+    scale: int = Form(10, description="Escala da imagem em metros."),
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. Busca os talhões no banco de dados
+    talhoes = await listar_talhoes_por_variedade(current_user['id'], variedade) #
+    if not talhoes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Nenhum talhão encontrado para a variedade '{variedade}'."
+        )
+
+    # 2. Cria uma tarefa assíncrona para cada talhão
+    async def get_url_for_talhao(talhao):
+        """Função auxiliar para encapsular a chamada ao GEE e tratar erros."""
+        try:
+            url = gee_service.get_download_url(
+                geometry=talhao['geometria'],
+                start_date=start_date,
+                end_date=end_date,
+                scale=scale
+            )
+            return {"status": "success", "url": url}
+        except Exception as e:
+            logger.error(f"Erro no GEE para o talhão {talhao['roi_id']}: {e}")
+            return {"status": "error", "message": str(e)}
+
+    tasks = [get_url_for_talhao(talhao) for talhao in talhoes]
+    results_gee = await asyncio.gather(*tasks)
+
+    # 3. Formata a resposta final combinando os dados do talhão com os resultados do GEE
+    response_data = []
+    for i, talhao in enumerate(talhoes):
+        result = results_gee[i]
+        response_data.append(
+            VarietyDownloadResult(
+                roi_id=talhao['roi_id'],
+                nome_talhao=talhao['nome_talhao'],
+                status=result['status'],
+                download_url=result.get('url', ''),
+                error_message=result.get('message')
+            )
+        )
+    
+    return response_data
