@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 import logging
 import os
 from utils.exception_utils import handle_exceptions
+from datetime import datetime, timedelta
 from passlib.context import CryptContext
 import zxcvbn
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +107,49 @@ def with_db_connection(func):
                 await conn.close()
                 logger.info("Conexão fechada")
     return wrapper
+
+@with_db_connection
+async def store_refresh_token(conn, user_id: int, token: str) -> None:
+    """Armazena o hash do refresh token no banco de dados."""
+    hashed_token = PWD_CONTEXT.hash(token)
+    expires_at = datetime.utcnow() + timedelta(days=1) # Validade de 1 dia
+
+    # Remove tokens antigos do mesmo usuário para garantir um token ativo por vez
+    await conn.execute("DELETE FROM user_refresh_tokens WHERE user_id = $1", user_id)
+
+    await conn.execute(
+        """
+        INSERT INTO user_refresh_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        """,
+        user_id, hashed_token, expires_at
+    )
+    logger.info(f"Refresh token armazenado para o usuário ID {user_id}")
+
+@with_db_connection
+async def get_user_by_refresh_token(conn, token: str) -> Optional[dict]:
+    """Busca um usuário a partir de um refresh token válido."""
+    records = await conn.fetch("SELECT user_id, token_hash FROM user_refresh_tokens WHERE expires_at > NOW()")
+    
+    for record in records:
+        if PWD_CONTEXT.verify(token, record['token_hash']):
+            # Encontrou o token, agora remove para evitar reuso (base para rotação)
+            await conn.execute("DELETE FROM user_refresh_tokens WHERE token_hash = $1", record['token_hash'])
+            return await get_user_by_email_conn(conn, record['user_id']) # Supõe uma função que usa uma conexão existente
+    
+    return None
+
+@with_db_connection
+async def delete_user_refresh_tokens(conn, user_id: int) -> None:
+    """Remove todos os refresh tokens de um usuário (para logout)."""
+    await conn.execute("DELETE FROM user_refresh_tokens WHERE user_id = $1", user_id)
+    logger.info(f"Refresh tokens removidos para o usuário ID {user_id}")
+
+# É uma boa prática ter uma versão de get_user_by_email que possa reusar uma conexão
+async def get_user_by_email_conn(conn, user_id: int):
+    # Esta função é um exemplo, você pode adaptar a sua `get_user_by_email`
+    user = await conn.fetchrow("SELECT id, nome, email, senha, role FROM usuario WHERE id = $1", user_id)
+    return dict(user) if user else None
 
 @with_db_connection
 async def inserir_usuario(conn, nome: str, email: str, senha: str, role: str = "user"):

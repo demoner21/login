@@ -2,35 +2,83 @@ import { logout } from './auth-session.js';
 
 const BASE_URL = '/api/v1';
 
+async function refreshToken() {
+    try {
+        await fetch(`${BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        return true
+    } catch (error) {
+        console.error('Falha ao renovar o token:', error);
+        return false;
+    }
+}
+
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error);
+        } else {
+            prom.resolve(token);
+        }
+    });
+    failedQueue = [];
+};
+
 export async function fetchApi(url, options = {}) {
-    const headers = {
-        ...options.headers,
-    };
+    try {
+        const config = { 
+            ...options, 
+            headers: { ...options.headers },
+            credentials: 'include' 
+        };
+        let response = await fetch(`${BASE_URL}${url}`, config);
 
-    const config = { 
-        ...options, 
-        headers,
-        credentials: 'include' 
-    };
+        if (response.status === 401) {
+            if (isRefreshing) {
+                // Se já há uma requisição de refresh em andamento, enfileira a nova
+                return new Promise((resolve, reject) => {
+                    failedQueue.push({ resolve, reject });
+                }).then(() => {
+                    // Tenta novamente a requisição original
+                    return fetch(`${BASE_URL}${url}`, config);
+                });
+            }
 
-    const response = await fetch(`${BASE_URL}${url}`, config);
-    
-    if (response.status === 401) {
-        logout();
-        throw new Error('Sessão expirada. Você foi desconectado.');
+            isRefreshing = true;
+            
+            const refreshed = await refreshToken();
+            
+            if (refreshed) {
+                processQueue(null);
+                // Tenta novamente a requisição original após o refresh
+                response = await fetch(`${BASE_URL}${url}`, config);
+            } else {
+                processQueue(new Error('Sessão expirada.'));
+                logout(); // Se o refresh falhar, desloga o usuário
+                throw new Error('Sessão expirada. Você foi desconectado.');
+            }
+        }
+        
+        // Se a resposta final não for OK
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
+            throw new Error(error.detail || `Falha na requisição: ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+            return response.json();
+        }
+        return response;
+
+    } finally {
+        isRefreshing = false;
     }
-
-    if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Erro desconhecido na resposta da API.' }));
-        throw new Error(error.detail || `Falha na requisição: ${response.statusText}`);
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (contentType && contentType.includes("application/json")) {
-        return response.json();
-    }
-    
-    return response;
 }
 
 export async function fetchUserROIs(limit, offset, variedade, propriedade) {
