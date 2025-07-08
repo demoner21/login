@@ -36,8 +36,7 @@
             </div>
             <div>
                 <label for="shapefileUpload">Arquivos Shapefile:</label>
-                <input type="file" id="shapefileUpload" name="shapefiles" 
-                       accept=".shp,.shx,.dbf,.prj,.cpg" multiple required>
+                <input type="file" id="shapefileUpload" name="shapefiles" accept=".shp,.shx,.dbf,.prj,.cpg" multiple required>
                 <div id="fileList" class="file-list-container"></div>
             </div>
             <div class="preview-controls">
@@ -60,6 +59,27 @@
         </div>
     </section>
 
+    <section id="download-por-variedade">
+        <h2>Download de Imagens por Variedade</h2>
+        <form id="varietyDownloadForm">
+            <div>
+                <label for="varietyDownloadSelect">Variedade:</label>
+                <select id="varietyDownloadSelect" required>
+                    <option value="">-- Carregando Variedades --</option>
+                </select>
+            </div>
+            <div>
+                <label for="varietyStartDate">Data Início:</label>
+                <input type="date" id="varietyStartDate" required>
+            </div>
+            <div>
+                <label for="varietyEndDate">Data Fim:</label>
+                <input type="date" id="varietyEndDate" required>
+            </div>
+            <button type="submit">Gerar Links para Variedade</button>
+        </form>
+        <div id="varietyDownloadStatus" style="margin-top: 10px;"></div>
+    </section>
     <section id="visualizar">
         <h2>Minhas Regiões de Interesse (<span id="roiTotalCount">0</span>)</h2>
     
@@ -71,7 +91,7 @@
                 </select>
             </div>
             <div>
-                <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
+                 <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
                 <select id="varietySelect">
                     <option value="">-- Todas as Variedades --</option>
                 </select>
@@ -100,17 +120,17 @@
         <div class="modal-content">
             <header class="modal-header">
                 <h2>Editar Região de Interesse</h2>
-                <button class="close-modal" onclick="closeEditModal()">&times;</button>
+                 <button class="close-modal" onclick="closeEditModal()">&times;</button>
             </header>
             <div class="modal-body">
                 <form id="editRoiForm">
                     <input type="hidden" id="editRoiId">
                     <div>
-                         <label for="editRoiName">Nome:</label>
+                        <label for="editRoiName">Nome:</label>
                         <input type="text" id="editRoiName" name="nome" required>
                     </div>
                     <div>
-                         <label for="editRoiDescription">Descrição:</label>
+                        <label for="editRoiDescription">Descrição:</label>
                         <textarea id="editRoiDescription" name="descricao" rows="4"></textarea>
                     </div>
                     <div class="modal-footer">

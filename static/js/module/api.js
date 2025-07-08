@@ -136,3 +136,51 @@ export async function uploadShapefile(formData) {
     }
     return response.json();
 }
+
+/**
+ * Requisita o download de uma imagem para uma única ROI (Propriedade ou Talhão).
+ */
+export async function requestROIDownload(roiId, startDate, endDate, scale = 10) {
+    return await fetchApi(`/roi/${roiId}/download`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            start_date: startDate,
+            end_date: endDate,
+            scale: parseInt(scale, 10),
+        }),
+    });
+}
+
+/**
+ * Requisita o download de imagens individuais para todos os talhões de uma variedade.
+ * NOTA: Este endpoint espera FormData, então fazemos a chamada fetch diretamente.
+ */
+export async function requestVarietyDownload(variety, startDate, endDate, scale = 10) {
+    const formData = new FormData();
+    formData.append('variedade', variety);
+    formData.append('start_date', startDate);
+    formData.append('end_date', endDate);
+    formData.append('scale', scale);
+
+    const response = await fetch(`${BASE_URL}/roi/download-by-variety`, { //
+        method: 'POST',
+        body: formData,
+        credentials: 'include' // Essencial para enviar os cookies de autenticação
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error('Sessão expirada. Você foi desconectado.');
+    }
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.detail || 'Falha ao requisitar o download por variedade.');
+    }
+
+    return data;
+}

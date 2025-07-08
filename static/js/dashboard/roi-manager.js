@@ -1,4 +1,12 @@
-import { fetchUserROIs, fetchROIDetails, deleteUserROI, fetchAvailableVarieties, fetchAvailableProperties } from '../module/api.js';
+import {
+    fetchUserROIs,
+    fetchROIDetails,
+    deleteUserROI,
+    fetchAvailableVarieties,
+    fetchAvailableProperties,
+    requestROIDownload,
+    requestVarietyDownload
+} from '../module/api.js';
 import { initializeMapWithLayers } from '../module/map-utils.js';
 import { fillEditModal } from '../module/ui-handlers.js';
 import { normalizeName } from '../module/text-normalizer.js';
@@ -14,13 +22,13 @@ let currentPropertyFilter = '';
  */
 function displayROIList(rois) {
     const roiListElement = document.getElementById('roiList');
-    roiListElement.innerHTML = ''; // Limpa completamente o conteúdo anterior
+    roiListElement.innerHTML = '';
 
     if (rois.length === 0) {
         roiListElement.innerHTML = '<p>Nenhuma ROI encontrada com os filtros atuais.</p>';
         return;
     }
-    
+
     const list = document.createElement('ul');
     rois.forEach(roi => {
         const displayName = (roi.nome_propriedade || roi.nome).replace(/_/g, ' ');
@@ -50,7 +58,7 @@ async function populatePropertyDropdown() {
     const selectElement = document.getElementById('propertySelect');
     try {
         const propriedades = await fetchAvailableProperties();
-        selectElement.options.length = 1; // Limpa opções antigas
+        selectElement.options.length = 1;
 
         propriedades.forEach(prop => {
             if (prop) {
@@ -72,8 +80,8 @@ async function populateVarietyDropdown() {
     const selectElement = document.getElementById('varietySelect');
     try {
         const variedades = await fetchAvailableVarieties();
-        selectElement.options.length = 1; // Limpa opções antigas
-        
+        selectElement.options.length = 1;
+
         variedades.forEach(variedade => {
             if (variedade) {
                 const option = document.createElement('option');
@@ -120,6 +128,61 @@ export function setupROIEvents() {
     populatePropertyDropdown();
     populateVarietyDropdown();
 
+    const varietySelect = document.getElementById('varietyDownloadSelect');
+    const varietyDownloadForm = document.getElementById('varietyDownloadForm');
+    const varietyStatusEl = document.getElementById('varietyDownloadStatus');
+
+    fetchAvailableVarieties().then(variedades => {
+        varietySelect.innerHTML = '<option value="">-- Selecione uma Variedade --</option>';
+        variedades.forEach(v => {
+            const option = document.createElement('option');
+            option.value = v;
+            option.textContent = v;
+            varietySelect.appendChild(option);
+        });
+    });
+
+    varietyDownloadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const variety = varietySelect.value;
+        const startDate = document.getElementById('varietyStartDate').value;
+        const endDate = document.getElementById('varietyEndDate').value;
+
+        if (!variety || !startDate || !endDate) {
+            varietyStatusEl.innerHTML = '<div class="error">Por favor, preencha todos os campos.</div>';
+            return;
+        }
+
+        varietyStatusEl.innerHTML = '<div class="info">Processando todos os talhões no GEE, isso pode levar um momento...</div>';
+
+        try {
+            const results = await requestVarietyDownload(variety, startDate, endDate);
+            
+            let resultHTML = '<h4>Resultados do Processamento:</h4><ul>';
+            results.forEach(res => {
+                if (res.status === 'success') {
+                    resultHTML += `
+                        <li>
+                            <strong>Talhão:</strong> ${res.nome_talhao} (ID: ${res.roi_id}) - 
+                            <a href="${res.download_url}" target="_blank" rel="noopener noreferrer">Baixar Imagem</a>
+                        </li>`;
+                } else {
+                    resultHTML += `
+                        <li style="color: red;">
+                            <strong>Talhão:</strong> ${res.nome_talhao} (ID: ${res.roi_id}) - 
+                            Falha no processamento: ${res.error_message}
+                        </li>`;
+                }
+            });
+            resultHTML += '</ul>';
+
+            varietyStatusEl.innerHTML = `<div class="success">${resultHTML}</div>`;
+
+        } catch (error) {
+            varietyStatusEl.innerHTML = `<div class="error">Erro: ${error.message}</div>`;
+        }
+    });
+
     document.getElementById('roiList').addEventListener('click', (e) => {
         const target = e.target;
         if (target.matches('[data-roi-id-view]')) {
@@ -131,21 +194,18 @@ export function setupROIEvents() {
         }
     });
 
-    // Event listener para o filtro de Propriedade
     document.getElementById('propertySelect').addEventListener('change', (e) => {
         currentPropertyFilter = e.target.value;
         currentPage = 1;
         loadUserROIs();
     });
 
-    // Event listener para o filtro de Variedade
     document.getElementById('varietySelect').addEventListener('change', (e) => {
         currentSearchTerm = e.target.value;
         currentPage = 1;
         loadUserROIs();
     });
 
-    // Event listeners para os botões de paginação
     document.getElementById('nextPageBtn').addEventListener('click', () => {
         currentPage++;
         loadUserROIs();
@@ -158,20 +218,16 @@ export function setupROIEvents() {
         }
     });
 
-    // Event listener para o botão "Voltar para lista" na tela de detalhes
     document.getElementById('backToList').addEventListener('click', () => {
         const filtersContainer = document.getElementById('roiFilters');
         if (filtersContainer) {
             filtersContainer.classList.remove('hidden');
         }
-        
+
         document.getElementById('roiList').classList.remove('hidden');
         document.getElementById('roiDetails').classList.add('hidden');
-
-        // Reabilita os filtros
         document.getElementById('propertySelect').disabled = false;
         document.getElementById('varietySelect').disabled = false;
-
         updatePaginationControls(parseInt(document.getElementById('roiTotalCount').textContent, 10));
 
         if (roiMap) {
@@ -188,7 +244,7 @@ async function openEditModal(roiId) {
     try {
         const statusElement = document.getElementById('editRoiStatus');
         if (statusElement) statusElement.innerHTML = '';
-        
+
         const roi = await fetchROIDetails(roiId);
         fillEditModal(roi);
     } catch (error) {
@@ -257,11 +313,9 @@ function displayROIDetails(roi) {
     document.getElementById('roiList').classList.add('hidden');
     document.getElementById('paginationControls').classList.add('hidden');
     document.getElementById('roiDetails').classList.remove('hidden');
-
-    // Desabilita os filtros
     document.getElementById('propertySelect').disabled = true;
     document.getElementById('varietySelect').disabled = true;
-
+    
     document.getElementById('roiInfo').innerHTML = `
         <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
         <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
@@ -270,12 +324,54 @@ function displayROIDetails(roi) {
                 Processar Selecionados (<span id="contadorLote">0</span>)
             </button>
         </div>
+        <div class="gee-download-form" style="margin-top: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+            <h4>Download de Imagem (GEE)</h4>
+            <form id="geeDownloadForm">
+                <input type="hidden" id="geeRoiId" value="${roi.roi_id}">
+                <div>
+                    <label for="geeStartDate">Data Início:</label>
+                    <input type="date" id="geeStartDate" required>
+                </div>
+                <div>
+                    <label for="geeEndDate">Data Fim:</label>
+                    <input type="date" id="geeEndDate" required>
+                </div>
+                <button type="submit">Gerar Link de Download</button>
+            </form>
+            <div id="geeDownloadStatus" style="margin-top: 10px;"></div>
+        </div>
     `;
+
+    document.getElementById('geeDownloadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const roiId = document.getElementById('geeRoiId').value;
+        const startDate = document.getElementById('geeStartDate').value;
+        const endDate = document.getElementById('geeEndDate').value;
+        const statusEl = document.getElementById('geeDownloadStatus');
+
+        if (!startDate || !endDate) {
+            statusEl.innerHTML = '<div class="error">Por favor, selecione as datas de início e fim.</div>';
+            return;
+        }
+
+        statusEl.innerHTML = '<div class="info">Processando no GEE, por favor aguarde...</div>';
+
+        try {
+            const result = await requestROIDownload(roiId, startDate, endDate);
+            statusEl.innerHTML = `
+                <div class="success">
+                    Link gerado! <a href="${result.download_url}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar a imagem</a>.
+                </div>
+            `;
+        } catch (error) {
+            statusEl.innerHTML = `<div class="error">Erro: ${error.message}</div>`;
+        }
+    });
 
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
-    
+
     const atualizarBotaoLote = () => {
         const totalSelecionados = talhoesSelecionados.size;
         contadorLote.textContent = totalSelecionados;
@@ -285,7 +381,6 @@ function displayROIDetails(roi) {
 
     btnProcessarLote.onclick = () => {
         console.log("Processando talhões:", Array.from(talhoesSelecionados));
-        // Aqui você chamaria a API para processar o lote
     };
 
     if (window.roiMap) {
@@ -294,7 +389,7 @@ function displayROIDetails(roi) {
     }
 
     window.roiMap = initializeMapWithLayers('map');
-    
+
     if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
         const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
         const estiloHover = { weight: 4, fillOpacity: 0.5 };
@@ -310,7 +405,7 @@ function displayROIDetails(roi) {
                 const talhaoId = props.roi_id;
 
                 layer.bindTooltip(`<strong>Talhão:</strong> ${talhaoNumero}<br><strong>Variedade:</strong> ${variedade}<br><strong>Área:</strong> ${areaHa}`);
-                
+
                 layer.on('click', () => {
                     if (!talhaoId) return;
                     if (talhoesSelecionados.has(talhaoId)) {
