@@ -1,5 +1,5 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from database.database import (
     get_user_by_email,
@@ -67,44 +67,45 @@ async def register_user(user_data: UserCreate):
             detail="Erro ao registrar usuário"
         )
 
-@router.post("/token", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@router.post("/token", status_code=status.HTTP_204_NO_CONTENT)
+async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Endpoint para login de usuários.
-    Retorna um token JWT para autenticação.
+    Define um cookie HttpOnly seguro com o token JWT para autenticação.
     """
     auth_logger.info(f"Tentativa de login para: {form_data.username}")
     
     try:
-        # Buscar usuário no banco de dados
         user = await get_user_by_email(form_data.username)
         
-        if not user:
-            auth_logger.warning(f"Usuário não encontrado: {form_data.username}")
+        if not user or not verify_password(form_data.password, user['senha']):
+            auth_logger.warning(f"Falha na autenticação para: {form_data.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Credenciais inválidas",
-                headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Verificar senha
-        if not verify_password(form_data.password, user['senha']):
-            auth_logger.warning("Senha incorreta")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Credenciais inválidas",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # Gerar token de acesso
         access_token_expires = timedelta(minutes=30)
         access_token = create_access_token(
             data={"sub": user['email']},
             expires_delta=access_token_expires
         )
 
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            samesite='lax',
+            secure=True,
+            path="/",
+            max_age=1800
+        )
+
         auth_logger.info(f"Login bem-sucedido para: {user['email']}")
-        return {"access_token": access_token, "token_type": "bearer"}
+        
+        # A função termina aqui, sem 'return'.
+        # FastAPI enviará a resposta 204 com o cookie.
+        return
 
     except HTTPException:
         raise

@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
-from typing import Union
+from typing import Union, Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Cookie
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from database.database import get_user_by_email
@@ -35,14 +35,19 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(access_token: Optional[str] = Cookie(None)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Não foi possível validar as credenciais",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if access_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Não autenticado"
+        )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
