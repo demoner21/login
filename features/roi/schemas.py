@@ -64,3 +64,17 @@ class VarietyDownloadResult(BaseModel):
     download_url: str
     status: str
     error_message: Optional[str] = None
+
+class BatchDownloadRequest(BaseModel):
+    roi_ids: List[int] = Field(..., description="Lista de IDs das ROIs (talhões) a serem processadas.")
+    start_date: date = Field(..., description="Data de início (YYYY-MM-DD) para a busca de imagens.")
+    end_date: date = Field(..., description="Data de fim (YYYY-MM-DD) para a busca de imagens.")
+    bands: Optional[List[str]] = Field(
+        None,
+        description="Lista opcional de bandas para download. Se omitido, baixa todas."
+    )
+
+class BatchDownloadResponse(BaseModel):
+    message: str
+    task_details: Dict
+    

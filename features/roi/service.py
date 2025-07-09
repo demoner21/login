@@ -1,7 +1,11 @@
 import json
+import os
+import shutil
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from utils.zip_creator import ZipCreator
+from typing import Dict, List, Optional, Any
 
 from fastapi import UploadFile
 from shapely.geometry import shape, mapping
@@ -9,9 +13,11 @@ from shapely.ops import unary_union
 
 from utils.upload_utils import save_uploaded_files, cleanup_temp_files
 from services.shapefile_service import ShapefileSplitterProcessor
-# from services.earth_engine import gee_service
+from features.gee.service import gee_service
+from utils.text_normalizer import normalize_name
 from . import queries, schemas
-from .schemas import DownloadRequest
+
+logger = logging.getLogger(__name__)
 
 
 class ROIService:
@@ -109,13 +115,13 @@ class ROIService:
         if not roi_ids:
             raise ValueError("A lista de IDs de ROI não pode ser vazia.")
 
-        geometries = []
-        for roi_id in roi_ids:
-            roi = await self.get_roi_by_id(roi_id=roi_id, user_id=user_id)
-            if not roi or not roi.get('geometria'):
-                raise ValueError(
-                    f"ROI com ID {roi_id} não encontrada ou não possui geometria válida.")
-            geometries.append(shape(roi['geometria']))
+        rois = await queries.listar_rois_por_ids_para_batch(user_id=user_id, roi_ids=roi_ids)
+        if not rois:
+            raise ValueError("Nenhuma ROI válida encontrada para os IDs fornecidos.")
+
+        geometries = [shape(roi['geometria']) for roi in rois if roi.get('geometria')]
+        if not geometries:
+            raise ValueError("Nenhuma geometria válida encontrada nas ROIs selecionadas.")
 
         unified_geometry = unary_union(geometries)
 
@@ -186,15 +192,13 @@ class ROIService:
         """Gera uma URL de download do GEE para uma única ROI."""
         roi = await self.get_roi_by_id(roi_id=roi_id, user_id=user_id)
         if not roi or not roi.get('geometria'):
-            raise ValueError(
-                "ROI não encontrada ou não possui geometria válida.")
+            raise ValueError("ROI não encontrada ou não possui geometria válida.")
 
         geometria_para_gee = roi['geometria']
         if geometria_para_gee.get('type') == 'FeatureCollection':
             features = geometria_para_gee.get('features', [])
             if not features:
-                raise ValueError(
-                    "FeatureCollection da propriedade está vazia.")
+                raise ValueError("FeatureCollection da propriedade está vazia.")
             geometrias_dos_talhoes = [shape(f['geometry']) for f in features]
             geometria_unificada = unary_union(geometrias_dos_talhoes)
             geometria_para_gee = mapping(geometria_unificada)
@@ -212,6 +216,65 @@ class ROIService:
             "roi_name": roi.get('nome'),
             "download_url": download_url
         }
+
+    async def start_batch_download_for_ids(
+        self,
+        *,
+        user_id: int,
+        roi_ids: List[int],
+        start_date: str,
+        end_date: str,
+        bands: Optional[List[str]] = None
+    ) -> None:
+        logger.info(f"Iniciando download em lote para IDs: {roi_ids} do usuário {user_id}.")
+        
+        # 1. Define um diretório base único para este trabalho
+        output_base_dir = Path(f"static/downloads/user_{user_id}/batch_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        os.makedirs(output_base_dir, exist_ok=True)
+
+        try:
+            rois_to_process = await queries.listar_rois_por_ids_para_batch(
+                user_id=user_id, roi_ids=roi_ids
+            )
+            if not rois_to_process:
+                logger.warning(f"Nenhuma ROI válida encontrada para os IDs: {roi_ids}.")
+                return
+            
+            # 2. Loop para baixar todas as imagens do GEE
+            for roi_dict in rois_to_process:
+                processed_roi = self._process_roi_data(roi_dict)
+                logger.info(f"Processando download para o talhão ID: {processed_roi['roi_id']}")
+                gee_service.download_images_for_roi(
+                    roi=processed_roi,
+                    start_date=start_date,
+                    end_date=end_date,
+                    output_base_dir=output_base_dir,
+                    bands_to_download=bands
+                )
+            logger.info("Fase de download do GEE concluída.")
+
+            # 3. Criar o arquivo ZIP a partir do diretório de saída
+            zip_creator = ZipCreator()
+            zip_buffer = zip_creator.create_zip_from_directory(output_base_dir)
+
+            # Salvar o arquivo ZIP no disco
+            zip_filename = output_base_dir / "download_completo.zip"
+            with open(zip_filename, "wb") as f:
+                f.write(zip_buffer.getvalue())
+            logger.info(f"Arquivo ZIP final salvo em: {zip_filename}")
+
+        except Exception as e:
+            logger.error(f"Erro crítico durante o download em lote para os IDs {roi_ids}: {e}", exc_info=True)
+            # Você pode querer adicionar um mecanismo para notificar o usuário sobre a falha
+
+        finally:
+            # 4. Limpeza: remove os arquivos TIF e subdiretórios, mantendo apenas o ZIP final
+            logger.info("Iniciando limpeza dos arquivos temporários.")
+            for item in os.listdir(output_base_dir):
+                item_path = output_base_dir / item
+                if item_path.is_dir():
+                    shutil.rmtree(item_path) # Remove subdiretórios (ex: propriedade/talhao)
+            logger.info(f"Limpeza concluída. Apenas o arquivo ZIP permanece em {output_base_dir}.")
 
 
 # Instância única do serviço para ser usada pelo roteador e por outros serviços

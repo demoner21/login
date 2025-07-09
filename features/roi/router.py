@@ -1,13 +1,13 @@
-# features/roi/router.py (VERSÃO CORRIGIDA E FINAL)
-
 import logging
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query, BackgroundTasks
 from typing import List, Optional
-
-# A importação de 'queries' foi REMOVIDA. O router não deve mais conhecer a camada de dados.
+from datetime import datetime
+from pathlib import Path
+from fastapi.responses import FileResponse
 from . import schemas
 from .service import roi_service
 from ..auth.dependencies import get_current_user
+from utils.validators import validate_date_range
 
 # O prefixo foi removido daqui para ser gerenciado no main.py, tornando o router mais reutilizável.
 router = APIRouter(
@@ -171,3 +171,82 @@ async def request_gee_download(
         logger.error(f"Falha no GEE para ROI {roi_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Erro ao processar a requisição no GEE.")
+
+@router.post(
+    "/batch-download",
+    response_model=schemas.BatchDownloadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="[GEE] Inicia download em lote para ROIs selecionadas"
+)
+async def download_images_for_selected_rois(
+    background_tasks: BackgroundTasks,
+    request_data: schemas.BatchDownloadRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Inicia um processo em segundo plano para baixar imagens do Sentinel-2
+    para uma lista específica de IDs de ROI (talhões).
+
+    A resposta é imediata, e o processo continua no servidor.
+    """
+    validate_date_range(
+        request_data.start_date.isoformat(),
+        request_data.end_date.isoformat()
+        )
+
+    try:
+        user_id = current_user['id']
+        if not request_data.roi_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A lista de IDs de ROI não pode ser vazia."
+            )
+
+        logger.info(f"Requisição de download em lote para {len(request_data.roi_ids)} ROIs recebida.")
+
+        batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        future_zip_path = f"static/downloads/user_{user_id}/{batch_folder_name}/download_completo.zip"
+        
+        # Adiciona a nova função de serviço à fila de tarefas
+        background_tasks.add_task(
+            roi_service.start_batch_download_for_ids, # Nova função que criaremos a seguir
+            user_id=user_id,
+            roi_ids=request_data.roi_ids,
+            start_date=request_data.start_date.isoformat(),
+            end_date=request_data.end_date.isoformat(),
+            bands=request_data.bands
+        )
+
+        return {
+        "message": "A tarefa foi iniciada. O arquivo ZIP estará disponível em breve.",
+        "task_details": {
+            "download_link": f"/api/v1/roi/download-zip/{batch_folder_name}"
+        }
+    }
+    except Exception as e:
+        logger.error(f"Falha ao iniciar a tarefa de download em lote: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível iniciar a tarefa de download."
+        )
+
+@router.get(
+    "/download-zip/{batch_folder_name}",
+    response_class=FileResponse,
+    summary="Baixa um arquivo ZIP de um lote processado"
+)
+async def get_zip_file(
+    batch_folder_name: str,
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user['id']
+    file_path = Path(f"static/downloads/user_{user_id}/{batch_folder_name}/download_completo.zip")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou ainda não processado.")
+
+    return FileResponse(
+        path=file_path,
+        media_type='application/zip',
+        filename=f"{batch_folder_name}.zip"
+    )
