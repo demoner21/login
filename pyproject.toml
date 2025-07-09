@@ -26,6 +26,7 @@ dependencies = [
     "aiofiles",
     "natsort",
     "geemap",
+    "geedim",
     "protobuf==3.20.*"
 ]
 
