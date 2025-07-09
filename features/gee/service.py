@@ -14,6 +14,7 @@ try:
 except Exception as e:
     logger.error(f"Falha crítica ao inicializar o Earth Engine: {e}")
 
+
 class EarthEngineService:
     """
     Serviço para processar e exportar imagens do Google Earth Engine.
@@ -56,21 +57,24 @@ class EarthEngineService:
 
             # 4. Define os parâmetros de visualização (bandas RGB) e gera a URL de download
             download_params = {
-                'bands': ['B4', 'B3', 'B2'], # RGB
+                'bands': ['B4', 'B3', 'B2'],  # RGB
                 'min': 0,
-                'max': 3000, # Valores de reflectância típicos para escalar para visualização
+                'max': 3000,  # Valores de reflectância típicos para escalar para visualização
                 'scale': scale,
-                'format': 'GEO_TIFF' # Exporta como GeoTIFF
+                'format': 'GEO_TIFF'  # Exporta como GeoTIFF
             }
-            
+
             url = image.getDownloadURL(download_params)
             logger.info(f"URL de download do GEE gerada com sucesso.")
             return url
 
         except Exception as e:
-            logger.error(f"Erro ao processar imagem no Earth Engine: {e}", exc_info=True)
+            logger.error(
+                f"Erro ao processar imagem no Earth Engine: {e}", exc_info=True)
             # Em um cenário real, você pode querer lançar uma exceção mais específica
-            raise ValueError(f"Não foi possível gerar a imagem do GEE. Detalhe: {str(e)}")
+            raise ValueError(
+                f"Não foi possível gerar a imagem do GEE. Detalhe: {str(e)}")
+
 
 # Instância única do serviço para ser usada em toda a aplicação
 gee_service = EarthEngineService()

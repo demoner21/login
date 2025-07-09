@@ -6,12 +6,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class NameNormalizer:
     """
     Classe para normalização de nomes e textos com tratamento de encoding problems
     e padronização de formatos.
     """
-    
+
     CHAR_CORRECTIONS = {
         "Ã§": "ç", "Ã£": "ã", "Ã¢": "â", "Ã©": "é", "Ãª": "ê",
         "Ã³": "ó", "Ã´": "ô", "Ãµ": "õ", "Ã¡": "á", "Ã­": "í",
@@ -26,7 +27,7 @@ class NameNormalizer:
 
     # Palavras que devem permanecer em minúsculas em nomes próprios
     LOWERCASE_WORDS = {
-        'de', 'do', 'da', 'dos', 'das', 'e', 'em', 'na', 'no', 
+        'de', 'do', 'da', 'dos', 'das', 'e', 'em', 'na', 'no',
         'nas', 'nos', 'por', 'para', 'com', 'à', 'a', 'o', 'as', 'os'
     }
 
@@ -40,27 +41,31 @@ class NameNormalizer:
         """
         Normaliza um texto aplicando correções de encoding, removendo caracteres especiais
         e padronizando a formatação.
-        
+
         Args:
             text: Texto a ser normalizado (pode ser string ou bytes)
             case: Formato de capitalização ('lower', 'upper', 'title', 'keep')
-            
+
         Returns:
             str: Texto normalizado
         """
         if not text:
             return ''
-            
+
         # Se for bytes, tentar decodificar
         if isinstance(text, bytes):
             text = cls._decode_bytes(text)
-        
-        text = cls._fix_encoding_issues(text) # Aplicar correções de caracteres
-        text = unicodedata.normalize('NFKC', text) # Normalizar caracteres Unicode (NFKC: compatibilidade + composição)
-        text = cls.SPECIAL_CHARS.sub('', text) # Remover caracteres especiais (exceto espaços e hífens)
-        text = cls.MULTIPLE_SPACES.sub(' ', text).strip() # Substituir múltiplos espaços por um único        
-        text = cls._apply_case(text, case) # Aplicar formatação de caso
-        
+
+        # Aplicar correções de caracteres
+        text = cls._fix_encoding_issues(text)
+        # Normalizar caracteres Unicode (NFKC: compatibilidade + composição)
+        text = unicodedata.normalize('NFKC', text)
+        # Remover caracteres especiais (exceto espaços e hífens)
+        text = cls.SPECIAL_CHARS.sub('', text)
+        # Substituir múltiplos espaços por um único
+        text = cls.MULTIPLE_SPACES.sub(' ', text).strip()
+        text = cls._apply_case(text, case)  # Aplicar formatação de caso
+
         return text
 
     @classmethod
@@ -70,10 +75,10 @@ class NameNormalizer:
         original_text = text
         for wrong, right in cls.CHAR_CORRECTIONS.items():
             text = text.replace(wrong, right)
-        
+
         if text != original_text:
             logger.debug(f"Corrigido encoding: '{original_text}' -> '{text}'")
-        
+
         return text
 
     @classmethod
@@ -84,8 +89,9 @@ class NameNormalizer:
                 return byte_data.decode(encoding)
             except UnicodeDecodeError:
                 continue
-        
-        logger.warning(f"Não foi possível decodificar bytes com encodings conhecidos. Usando replace.")
+
+        logger.warning(
+            f"Não foi possível decodificar bytes com encodings conhecidos. Usando replace.")
         return byte_data.decode('utf-8', errors='replace')
 
     @classmethod
@@ -117,11 +123,11 @@ class NameNormalizer:
     def normalize_dict_keys(cls, data: Dict[str, Any], case: str = 'lower') -> Dict[str, Any]:
         """
         Normaliza as chaves de um dicionário aplicando a normalização de texto.
-        
+
         Args:
             data: Dicionário com chaves a serem normalizadas
             case: Formato de capitalização para as chaves
-            
+
         Returns:
             Dict: Novo dicionário com chaves normalizadas
         """
@@ -131,11 +137,11 @@ class NameNormalizer:
     def normalize_list(cls, items: List[Union[str, bytes]], case: str = 'title') -> List[str]:
         """
         Normaliza uma lista de textos.
-        
+
         Args:
             items: Lista de textos a serem normalizados
             case: Formato de capitalização
-            
+
         Returns:
             List[str]: Lista com textos normalizados
         """
@@ -147,9 +153,11 @@ def normalize_name(name: Union[str, bytes], case: str = 'title') -> str:
     """Normaliza um nome próprio aplicando correções de encoding e formatação."""
     return NameNormalizer.normalize(name, case)
 
+
 def normalize_text(text: Union[str, bytes], case: str = 'keep') -> str:
     """Normaliza um texto genérico mantendo a capitalização original por padrão."""
     return NameNormalizer.normalize(text, case)
+
 
 def normalize_dict_keys(data: Dict[str, Any], case: str = 'lower') -> Dict[str, Any]:
     """Normaliza as chaves de um dicionário."""

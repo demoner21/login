@@ -1,6 +1,7 @@
 import structlog
 import logging
 
+
 def setup_logging():
     """
     Configura o logging para o projeto.
@@ -10,7 +11,7 @@ def setup_logging():
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
+
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
@@ -23,7 +24,8 @@ def setup_logging():
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
-    
+
     return logging.getLogger(__name__)
+
 
 logger = setup_logging()

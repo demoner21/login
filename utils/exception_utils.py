@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def handle_exceptions(func):
     """
     Decorador para centralizar o tratamento de exceções.

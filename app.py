@@ -1,15 +1,15 @@
+from features.roi.router import router as roi_router
+from features.auth.router import router as auth_router
+from middleware.session_middleware import TokenRefreshMiddleware
+from utils.logging import setup_logging
 import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from routes.auth_routes import router as auth_router
-from routes.roi_routes import router as roi_router
-from utils.logging import setup_logging
-from utils.session_middleware import TokenRefreshMiddleware
 
 # 1. Configurar o logging
 setup_logging()
@@ -34,18 +34,19 @@ app.add_middleware(
 
 app.add_middleware(TokenRefreshMiddleware)
 # 4. Incluir as Rotas da Aplicação
-app.include_router(auth_router, prefix="/api/v1")
-
-app.include_router(roi_router, prefix="/api/v1") # <--- 2. ROTA DE ROI ADICIONADA
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
+app.include_router(roi_router, prefix="/api/v1/roi",
+                   tags=["Regiões de Interesse"])
 
 # Monta um diretório estático (CSS, JS, Imagens) para ser servido
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
-# 5. Adicionar um evento de startup para logar o início
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Servidor iniciando e pronto para receber requisições.")
-# 6. Adicionar uma rota raiz para verificação
+
+
 @app.get("/", tags=["Root"])
 async def read_root():
     """

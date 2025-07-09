@@ -9,7 +9,7 @@ dependencies = [
     "fastapi-structlog",
     "asgi-correlation-id",
     "pillow",
-    "bcrypt",
+    "bcrypt==3.2.0",
     "numpy<1.28",
     "tensorflow<2.11",
     "matplotlib",
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["database", "routes"]
+packages = ["database", "features", "middleware", "utils"]
 
 [build-system]
 requires = ["setuptools>=61"]

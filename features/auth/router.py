@@ -1,37 +1,26 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from fastapi.security import OAuth2PasswordRequestForm
-from database.database import (
+import logging
+from typing import Optional
+
+from ..users.queries import (
     get_user_by_email,
-    verify_password,
-    get_password_hash,
     inserir_usuario,
     verificar_email_existente,
     store_refresh_token,
-    delete_user_refresh_tokens 
+    delete_user_refresh_tokens,
+    get_user_by_refresh_token
 )
-from utils.jwt_utils import (
-    create_access_token,
-    oauth2_scheme,
-    get_current_user,
-    create_refresh_token,
-    Token,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    REFRESH_TOKEN_EXPIRE_DAYS,
-)
-from pydantic import BaseModel
-from typing import Optional
-import logging
+from ..users.service import verify_password
+from ..users.schemas import UserCreate
+from .dependencies import get_current_user
+from .service import create_access_token, create_refresh_token
+from config import settings
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
-
+router = APIRouter()
 auth_logger = logging.getLogger('auth_routes')
 
-class UserCreate(BaseModel):
-    nome: str
-    email: str
-    senha: str
-    confirmar_senha: str
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(user_data: UserCreate):
@@ -72,6 +61,7 @@ async def register_user(user_data: UserCreate):
             detail="Erro ao registrar usuário"
         )
 
+
 @router.post("/token", status_code=status.HTTP_204_NO_CONTENT)
 async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     """
@@ -80,18 +70,20 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
     e outro para o refresh token.
     """
     auth_logger.info(f"Tentativa de login para: {form_data.username}")
-    
+
     try:
         user = await get_user_by_email(form_data.username)
-        
+
         if not user or not verify_password(form_data.password, user['senha']):
-            auth_logger.warning(f"Falha na autenticação para: {form_data.username}")
+            auth_logger.warning(
+                f"Falha na autenticação para: {form_data.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Credenciais inválidas",
             )
 
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token_expires = timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": user['email']}, expires_delta=access_token_expires
         )
@@ -119,11 +111,12 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
             samesite='lax',
             secure=True,
             path="/api/v1/auth/refresh",
-            max_age=int(timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS).total_seconds())
+            max_age=int(
+                timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS).total_seconds())
         )
 
         auth_logger.info(f"Login bem-sucedido para: {user['email']}")
-        
+
         # A função termina aqui, sem 'return'.
         # FastAPI enviará a resposta 204 com o cookie.
         return
@@ -137,12 +130,6 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
             detail="Erro interno no servidor"
         )
 
-@router.get("/me")
-async def read_users_me(current_user: dict = Depends(get_current_user)):
-    """
-    Retorna informações do usuário atual.
-    """
-    return current_user
 
 @router.post("/refresh", status_code=status.HTTP_204_NO_CONTENT)
 async def refresh(response: Response, refresh_token: Optional[str] = Cookie(None)):
@@ -150,31 +137,55 @@ async def refresh(response: Response, refresh_token: Optional[str] = Cookie(None
     Usa o refresh token (de um cookie HttpOnly) para gerar um novo access token.
     """
     if not refresh_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token não encontrado")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Refresh token não encontrado")
 
     user = await get_user_by_refresh_token(token=refresh_token)
     if not user:
         # Se o token não for válido ou já tiver sido usado, nega o acesso
         response.delete_cookie("access_token")
         response.delete_cookie("refresh_token")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token inválido ou expirado")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Refresh token inválido ou expirado"
+                            )
 
     # Token é válido, gerar novos tokens (Rotação de Token)
-    new_access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
-        data={"sub": user['email']}, expires_delta=new_access_token_expires
+        data={"sub": user['email']},
+        expires_delta=new_access_token_expires
     )
     new_refresh_token = create_refresh_token(data={"sub": user['email']})
-    
+
     await store_refresh_token(user_id=user['id'], token=new_refresh_token)
 
     response.set_cookie(
-        key="access_token", value=new_access_token, httponly=True, samesite='lax', secure=True, path="/", max_age=int(new_access_token_expires.total_seconds())
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        samesite='lax',
+        secure=True, path="/",
+        max_age=int(new_access_token_expires.total_seconds())
     )
     response.set_cookie(
-        key="refresh_token", value=new_refresh_token, httponly=True, samesite='lax', secure=True, path="/api/v1/auth/refresh", max_age=int(timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS).total_seconds())
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True, samesite='lax',
+        secure=True, path="/api/v1/auth/refresh",
+        max_age=int(
+            timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS).total_seconds())
     )
     return
+
+
+@router.get("/me")
+async def read_users_me(current_user: dict = Depends(get_current_user)):
+    """
+    Retorna informações do usuário atual.
+    """
+    return current_user
+
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(response: Response, current_user: dict = Depends(get_current_user)):
@@ -182,10 +193,10 @@ async def logout(response: Response, current_user: dict = Depends(get_current_us
     Faz logout do usuário, invalidando o refresh token no servidor e limpando os cookies.
     """
     user_id = current_user['id']
-    await delete_user_refresh_tokens(user_id) # Remove do DB
+    await delete_user_refresh_tokens(user_id)  # Remove do DB
 
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/api/v1/auth/refresh")
-    
+
     auth_logger.info(f"Logout bem-sucedido para: {current_user['email']}")
     return

@@ -1,5 +1,3 @@
-from dotenv import load_dotenv
-import os
 import time
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -7,11 +5,9 @@ from starlette.responses import Response
 from jose import jwt, JWTError
 from datetime import timedelta
 
-from utils.jwt_utils import SECRET_KEY, ALGORITHM, create_access_token
+from config import settings
+from features.auth.service import create_access_token
 
-load_dotenv()
-
-REFRESH_THRESHOLD_MINUTES = int(os.getenv("REFRESH_THRESHOLD_MINUTES"))
 
 class TokenRefreshMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -28,7 +24,8 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
 
             if token:
                 try:
-                    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                    payload = jwt.decode(
+                        token, SECRET_KEY, algorithms=[ALGORITHM])
 
                     exp_timestamp = payload.get("exp")
                     current_timestamp = int(time.time())
@@ -38,15 +35,18 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
 
                         if 0 < time_left_seconds < (REFRESH_THRESHOLD_MINUTES * 60):
                             email = payload.get("sub")
+
                             if email:
-                                new_token = create_access_token(data={"sub": email})
-                                
+                                new_token = create_access_token(
+                                    data={"sub": email})
+
                                 response.set_cookie(
                                     key="access_token",
                                     value=new_token,
                                     httponly=True,
+                                    # Para produção (HTTPS). Mude para False para testes em HTTP local.
                                     samesite='lax',
-                                    secure=True,          # Para produção (HTTPS). Mude para False para testes em HTTP local.
+                                    secure=True,
                                     path="/"
                                 )
 
