@@ -5,7 +5,8 @@ import {
     fetchAvailableVarieties,
     fetchAvailableProperties,
     requestROIDownload,
-    requestVarietyDownload
+    requestVarietyDownload,
+    startBatchDownloadForIds,
 } from '../module/api.js';
 import { initializeMapWithLayers } from '../module/map-utils.js';
 import { fillEditModal } from '../module/ui-handlers.js';
@@ -368,9 +369,13 @@ function displayROIDetails(roi) {
         }
     });
 
+
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
+    const geeDownloadStatusEl = document.getElementById('geeDownloadStatus');
+    
+    let roiLayer = null; // Declaramos a variável da camada aqui para que ela seja acessível por toda a função
 
     const atualizarBotaoLote = () => {
         const totalSelecionados = talhoesSelecionados.size;
@@ -379,8 +384,44 @@ function displayROIDetails(roi) {
         containerAcoes.style.display = totalSelecionados > 0 ? 'block' : 'none';
     };
 
-    btnProcessarLote.onclick = () => {
-        console.log("Processando talhões:", Array.from(talhoesSelecionados));
+    btnProcessarLote.onclick = async () => {
+        const totalSelecionados = talhoesSelecionados.size;
+        if (totalSelecionados === 0) {
+            geeDownloadStatusEl.innerHTML = '<div class="warning">Nenhum talhão selecionado.</div>';
+            return;
+        }
+        const startDate = document.getElementById('geeStartDate').value;
+        const endDate = document.getElementById('geeEndDate').value;
+        if (!startDate || !endDate) {
+            geeDownloadStatusEl.innerHTML = '<div class="error">Por favor, selecione as datas de início e fim.</div>';
+            return;
+        }
+        const idsParaProcessar = Array.from(talhoesSelecionados);
+        geeDownloadStatusEl.innerHTML = `<div class="info">Iniciando processo para ${totalSelecionados} talhões...</div>`;
+        btnProcessarLote.disabled = true;
+        try {
+            const result = await startBatchDownloadForIds(idsParaProcessar, startDate, endDate);
+            const downloadUrl = result.task_details.download_link;
+            geeDownloadStatusEl.innerHTML = `
+                <div class="success">
+                    ${result.message}<br>
+                    <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
+                    <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
+                </div>
+            `;
+            talhoesSelecionados.clear();
+            atualizarBotaoLote();
+            
+            // Chama o resetStyle na variável roiLayer, que é a camada GeoJSON correta
+            if (roiLayer) {
+                roiLayer.resetStyle();
+            }
+
+        } catch (error) {
+            geeDownloadStatusEl.innerHTML = `<div class="error">Erro ao iniciar tarefa: ${error.message}</div>`;
+        } finally {
+            btnProcessarLote.disabled = false;
+        }
     };
 
     if (window.roiMap) {
@@ -395,7 +436,8 @@ function displayROIDetails(roi) {
         const estiloHover = { weight: 4, fillOpacity: 0.5 };
         const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
 
-        const roiLayer = L.geoJSON(roi.geometria, {
+        // Atribui o resultado de L.geoJSON à variável roiLayer
+        roiLayer = L.geoJSON(roi.geometria, {
             style: estiloPadrao,
             onEachFeature: function(feature, layer) {
                 const props = feature.properties;
@@ -422,6 +464,7 @@ function displayROIDetails(roi) {
                     mouseover: (e) => e.target.setStyle(estiloHover),
                     mouseout: (e) => {
                         if (!talhoesSelecionados.has(talhaoId)) {
+                            // Aqui usamos a própria roiLayer para resetar o estilo da feature específica
                             roiLayer.resetStyle(e.target);
                         }
                     }

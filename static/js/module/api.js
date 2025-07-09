@@ -184,3 +184,20 @@ export async function requestVarietyDownload(variety, startDate, endDate, scale 
 
     return data;
 }
+
+/**
+ * Inicia um processo de download em lote no backend para uma lista de IDs de ROI.
+ */
+export async function startBatchDownloadForIds(roiIds, startDate, endDate) {
+    return await fetchApi(`/roi/batch-download`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            roi_ids: roiIds,
+            start_date: startDate,
+            end_date: endDate,
+        }),
+    });
+}
