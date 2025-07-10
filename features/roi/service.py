@@ -224,11 +224,11 @@ class ROIService:
         roi_ids: List[int],
         start_date: str,
         end_date: str,
-        bands: Optional[List[str]] = None
+        bands: Optional[List[str]] = None,
+        max_cloud_percentage: int = 5
     ) -> None:
         logger.info(f"Iniciando download em lote para IDs: {roi_ids} do usuário {user_id}.")
         
-        # 1. Define um diretório base único para este trabalho
         output_base_dir = Path(f"static/downloads/user_{user_id}/batch_{datetime.now().strftime('%Y%m%d%H%M%S')}")
         os.makedirs(output_base_dir, exist_ok=True)
 
@@ -240,24 +240,24 @@ class ROIService:
                 logger.warning(f"Nenhuma ROI válida encontrada para os IDs: {roi_ids}.")
                 return
             
-            # 2. Loop para baixar todas as imagens do GEE
             for roi_dict in rois_to_process:
                 processed_roi = self._process_roi_data(roi_dict)
                 logger.info(f"Processando download para o talhão ID: {processed_roi['roi_id']}")
-                gee_service.download_images_for_roi(
+
+                await gee_service.download_images_for_roi(
                     roi=processed_roi,
                     start_date=start_date,
                     end_date=end_date,
                     output_base_dir=output_base_dir,
-                    bands_to_download=bands
+                    bands_to_download=bands,
+                    max_cloud_percentage=max_cloud_percentage
                 )
+
             logger.info("Fase de download do GEE concluída.")
 
-            # 3. Criar o arquivo ZIP a partir do diretório de saída
             zip_creator = ZipCreator()
             zip_buffer = zip_creator.create_zip_from_directory(output_base_dir)
 
-            # Salvar o arquivo ZIP no disco
             zip_filename = output_base_dir / "download_completo.zip"
             with open(zip_filename, "wb") as f:
                 f.write(zip_buffer.getvalue())
@@ -265,17 +265,14 @@ class ROIService:
 
         except Exception as e:
             logger.error(f"Erro crítico durante o download em lote para os IDs {roi_ids}: {e}", exc_info=True)
-            # Você pode querer adicionar um mecanismo para notificar o usuário sobre a falha
 
         finally:
-            # 4. Limpeza: remove os arquivos TIF e subdiretórios, mantendo apenas o ZIP final
             logger.info("Iniciando limpeza dos arquivos temporários.")
             for item in os.listdir(output_base_dir):
                 item_path = output_base_dir / item
                 if item_path.is_dir():
-                    shutil.rmtree(item_path) # Remove subdiretórios (ex: propriedade/talhao)
+                    shutil.rmtree(item_path)
             logger.info(f"Limpeza concluída. Apenas o arquivo ZIP permanece em {output_base_dir}.")
 
 
-# Instância única do serviço para ser usada pelo roteador e por outros serviços
 roi_service = ROIService()

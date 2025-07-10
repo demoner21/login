@@ -214,7 +214,8 @@ async def download_images_for_selected_rois(
             roi_ids=request_data.roi_ids,
             start_date=request_data.start_date.isoformat(),
             end_date=request_data.end_date.isoformat(),
-            bands=request_data.bands
+            bands=request_data.bands,
+            max_cloud_percentage=request_data.max_cloud_percentage
         )
 
         return {

@@ -1,7 +1,6 @@
 import { logout } from './auth-session.js';
 
 const BASE_URL = '/api/v1';
-
 async function refreshToken() {
     try {
         await fetch(`${BASE_URL}/auth/refresh`, {
@@ -17,7 +16,6 @@ async function refreshToken() {
 
 let isRefreshing = false;
 let failedQueue = [];
-
 const processQueue = (error, token = null) => {
     failedQueue.forEach(prom => {
         if (error) {
@@ -52,7 +50,6 @@ export async function fetchApi(url, options = {}) {
             isRefreshing = true;
             
             const refreshed = await refreshToken();
-            
             if (refreshed) {
                 processQueue(null);
                 // Tenta novamente a requisição original após o refresh
@@ -75,7 +72,6 @@ export async function fetchApi(url, options = {}) {
             return response.json();
         }
         return response;
-
     } finally {
         isRefreshing = false;
     }
@@ -124,7 +120,6 @@ export async function uploadShapefile(formData) {
         body: formData,
         credentials: 'include'
     });
-
     if (response.status === 401) {
         logout();
         throw new Error('Sessão expirada. Você foi desconectado.');
@@ -137,22 +132,8 @@ export async function uploadShapefile(formData) {
     return response.json();
 }
 
-/**
- * Requisita o download de uma imagem para uma única ROI (Propriedade ou Talhão).
- */
-export async function requestROIDownload(roiId, startDate, endDate, scale = 10) {
-    return await fetchApi(`/roi/${roiId}/download`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            start_date: startDate,
-            end_date: endDate,
-            scale: parseInt(scale, 10),
-        }),
-    });
-}
+// *** FUNÇÃO REMOVIDA ***
+// export async function requestROIDownload(roiId, startDate, endDate, scale = 10) { ... }
 
 /**
  * Requisita o download de imagens individuais para todos os talhões de uma variedade.
@@ -170,7 +151,6 @@ export async function requestVarietyDownload(variety, startDate, endDate, scale 
         body: formData,
         credentials: 'include' // Essencial para enviar os cookies de autenticação
     });
-
     if (response.status === 401) {
         logout();
         throw new Error('Sessão expirada. Você foi desconectado.');
@@ -188,7 +168,7 @@ export async function requestVarietyDownload(variety, startDate, endDate, scale 
 /**
  * Inicia um processo de download em lote no backend para uma lista de IDs de ROI.
  */
-export async function startBatchDownloadForIds(roiIds, startDate, endDate) {
+export async function startBatchDownloadForIds(roiIds, startDate, endDate, cloudPercentage) {
     return await fetchApi(`/roi/batch-download`, {
         method: 'POST',
         headers: {
@@ -198,6 +178,7 @@ export async function startBatchDownloadForIds(roiIds, startDate, endDate) {
             roi_ids: roiIds,
             start_date: startDate,
             end_date: endDate,
+            max_cloud_percentage: parseInt(cloudPercentage, 10)
         }),
     });
 }

@@ -1,5 +1,6 @@
 from features.roi.router import router as roi_router
 from features.auth.router import router as auth_router
+from features.analysis.router import router as analysis_router
 from middleware.session_middleware import TokenRefreshMiddleware
 from utils.logging import setup_logging
 import logging
@@ -37,6 +38,8 @@ app.add_middleware(TokenRefreshMiddleware)
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(roi_router, prefix="/api/v1/roi",
                    tags=["Regiões de Interesse"])
+app.include_router(analysis_router, prefix="/api/v1/analysis",
+                    tags=["Análise de TCH & ATR"])
 
 # Monta um diretório estático (CSS, JS, Imagens) para ser servido
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")

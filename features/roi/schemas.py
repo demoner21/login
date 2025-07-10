@@ -72,6 +72,12 @@ class BatchDownloadRequest(BaseModel):
     bands: Optional[List[str]] = Field(
         None,
         description="Lista opcional de bandas para download. Se omitido, baixa todas."
+    ),
+    max_cloud_percentage: Optional[int] = Field(
+        5, 
+        ge=0, 
+        le=100, 
+        description="Percentual máximo de nuvens permitido (0-100)."
     )
 
 class BatchDownloadResponse(BaseModel):
