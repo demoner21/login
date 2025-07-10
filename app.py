@@ -3,6 +3,7 @@ from features.auth.router import router as auth_router
 from features.analysis.router import router as analysis_router
 from middleware.session_middleware import TokenRefreshMiddleware
 from utils.logging import setup_logging
+from services.earth_engine_initializer import initialize_earth_engine
 import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -47,6 +48,11 @@ app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Servidor iniciando... Conectando ao Google Earth Engine.")
+    try:
+        initialize_earth_engine()
+    except Exception as e:
+        logger.critical(f"NÃO FOI POSSÍVEL INICIALIZAR O GOOGLE EARTH ENGINE: {e}", exc_info=True)
     logger.info("Servidor iniciando e pronto para receber requisições.")
 
 

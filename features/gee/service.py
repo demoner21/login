@@ -14,20 +14,6 @@ from utils.text_normalizer import normalize_name
 
 logger = logging.getLogger(__name__)
 
-_gee_initialized = False
-
-def _ensure_gee_initialized():
-    global _gee_initialized
-    if not _gee_initialized:
-        try:
-            logger.info("Primeira requisição ao GEE. Tentando inicializar o Earth Engine...")
-            initialize_earth_engine()
-            _gee_initialized = True
-            logger.info("Google Earth Engine inicializado com sucesso para esta sessão.")
-        except Exception as e:
-            logger.critical(f"FALHA CRÍTICA AO INICIALIZAR O EARTH ENGINE: {e}", exc_info=True)
-            raise e
-
 
 class EarthEngineService:
     """
@@ -68,12 +54,16 @@ class EarthEngineService:
             single_band_image = image.select(band)
             logger.info(f"Preparando download para banda {band} em {filename.name}")
             
-            download_url = single_band_image.getDownloadURL({
-                'scale': scale,
-                'region': region,
-                'format': 'GEO_TIFF',
-                'crs': crs
-            })
+            loop = asyncio.get_running_loop()
+            download_url = await loop.run_in_executor(
+                None,
+                lambda: single_band_image.getDownloadURL({
+                    'scale': scale,
+                    'region': region,
+                    'format': 'GEO_TIFF',
+                    'crs': crs
+                })
+            )
 
             async with session.get(download_url) as response:
                 if response.status == 200:
@@ -104,7 +94,6 @@ class EarthEngineService:
         scale: int = 10,
         bands_to_download: Optional[List[str]] = None
     ) -> Dict:
-        _ensure_gee_initialized()
         results = {"status": "failure", "message": "", "path": ""}
         try:
             roi_id = roi.get('roi_id')
