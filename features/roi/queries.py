@@ -545,7 +545,8 @@ async def listar_rois_por_ids_para_batch(conn, roi_ids: List[int], user_id: int)
         # em uma única consulta ao banco de dados.
         query = """
             SELECT
-                roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, metadata
+                roi_id, nome, ST_AsGeoJSON(geometria)::json as geometria, metadata,
+                nome_propriedade, nome_talhao
             FROM regiao_de_interesse
             WHERE user_id = $1 AND roi_id = ANY($2::int[]);
         """
