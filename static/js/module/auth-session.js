@@ -1,7 +1,7 @@
 import { fetchApi } from './api.js';
 
 export function logout() {
-    localStorage.removeItem('access_token');
+    console.log("Sessão inválida ou expirada. Realizando logout...");
     window.location.href = '/static/login.html';
 }
 
@@ -11,6 +11,7 @@ export async function checkAuth() {
         await fetchApi('/auth/me'); 
         return true;
     } catch (error) {
+        logout();
         return false;
     }
 }

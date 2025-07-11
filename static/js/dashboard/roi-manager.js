@@ -326,6 +326,36 @@ function displayROIDetails(roi) {
     `;
 
     // 3. Adicionar Event Listeners
+        function pollForFile(downloadUrl, statusEl) {
+        statusEl.innerHTML = `<div class="info">Processando no servidor... Por favor, aguarde. O download começará automaticamente.</div>`;
+        
+        const intervalId = setInterval(async () => {
+            try {
+                // Faz uma requisição HEAD, que só verifica a existência do arquivo sem baixá-lo.
+                const response = await fetch(downloadUrl, { method: 'HEAD' });
+
+                if (response.ok) {
+                    // Arquivo pronto!
+                    clearInterval(intervalId); // Para o timer
+                    statusEl.innerHTML = `<div class="success">Arquivo pronto! Iniciando download...</div>`;
+
+                    // Cria um link temporário e "clica" nele para iniciar o download
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = downloadUrl.split('/').pop(); // Extrai o nome do arquivo
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+                // Se a resposta for 404, o arquivo ainda não está pronto. Não faz nada e espera a próxima verificação.
+            } catch (error) {
+                console.error("Erro na verificação do arquivo:", error);
+                statusEl.innerHTML = `<div class="error">Ocorreu um erro ao verificar o status do arquivo.</div>`;
+                clearInterval(intervalId);
+            }
+        }, 5000); // Verifica a cada 5 segundos
+    }
+
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
@@ -358,17 +388,10 @@ function displayROIDetails(roi) {
             btnProcessarLote.disabled = true;
             try {
                 const result = await startBatchDownloadForIds(idsParaProcessar, startDate, endDate, cloudPercentage);
-                const downloadUrl = result.task_details.download_link;
-                geeDownloadStatusEl.innerHTML = `
-                    <div class="success">
-                        ${result.message}<br>
-                        <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
-                        <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
-                    </div>
-                `;
+                // Em vez de mostrar o link, chama a função de polling
+                pollForFile(result.task_details.download_link, geeDownloadStatusEl);
                 talhoesSelecionados.clear();
                 atualizarBotaoLote();
-                
                 if (roiLayer) {
                     roiLayer.resetStyle();
                 }
@@ -400,13 +423,8 @@ function displayROIDetails(roi) {
             statusEl.innerHTML = '<div class="info">Iniciando tarefa de download para a variedade selecionada...</div>';
             try {
                 const result = await startVarietyDownloadForProperty(propertyId, variety, startDate, endDate, cloud);
-                const downloadUrl = result.task_details.download_link;
-                statusEl.innerHTML = `
-                    <div class="success">
-                        ${result.message}<br>
-                        <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
-                        <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
-                    </div>`;
+                // Em vez de mostrar o link, chama a função de polling
+                pollForFile(result.task_details.download_link, statusEl);
             } catch (error) {
                 statusEl.innerHTML = `<div class="error">Erro ao iniciar tarefa: ${error.message}</div>`;
             }
