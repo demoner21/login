@@ -5,6 +5,7 @@ import {
     fetchAvailableVarieties,
     fetchAvailableProperties,
     startBatchDownloadForIds,
+    startVarietyDownloadForProperty,
 } from '../module/api.js';
 import { initializeMapWithLayers } from '../module/map-utils.js';
 import { fillEditModal } from '../module/ui-handlers.js';
@@ -251,14 +252,29 @@ function displayROIDetails(roi) {
     document.getElementById('propertySelect').disabled = true;
     document.getElementById('varietySelect').disabled = true;
     
-    // *** INÍCIO DA MODIFICAÇÃO ***
+    const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
+    const estiloHover = { weight: 4, fillOpacity: 0.5 };
+    const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
+    const estiloVariedadeDestaque = { color: '#00FF00', weight: 3, fillOpacity: 0.7, fillColor: '#00FF00' };
+
+    const variedadesNaPropriedade = new Set();
+    if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
+        roi.geometria.features.forEach(feature => {
+            if (feature.properties && feature.properties.variedade) {
+                variedadesNaPropriedade.add(feature.properties.variedade);
+            }
+        });
+    }
+    const variedadesOptions = [...variedadesNaPropriedade].map(v => `<option value="${v}">${v}</option>`).join('');
+
+    // 2. Construir o HTML dos formulários
     document.getElementById('roiInfo').innerHTML = `
         <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
         <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
         
         <div class="batch-download-form" style="margin-top: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
-             <h4>Download em Lote de Imagens (GEE)</h4>
-             <p>Selecione os talhões no mapa e defina o período e o máximo de nuvens para iniciar o download.</p>
+             <h4>Download por Seleção de Talhões</h4>
+             <p>Selecione os talhões no mapa e defina o período para iniciar o download.</p>
              <div>
                  <label for="geeStartDate">Data Início:</label>
                  <input type="date" id="geeStartDate" required>
@@ -278,15 +294,43 @@ function displayROIDetails(roi) {
              </div>
              <div id="geeDownloadStatus" style="margin-top: 10px;"></div>
         </div>
-    `;
-    // *** FIM DA MODIFICAÇÃO ***
 
+        <div class="variety-download-form" style="margin-top: 25px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
+            <h4>Download por Variedade (nesta Propriedade)</h4>
+            ${variedadesNaPropriedade.size > 0 ? `
+                <form id="propertyVarietyDownloadForm">
+                    <div>
+                        <label for="propertyVarietySelect">Variedade:</label>
+                        <select id="propertyVarietySelect">
+                            <option value="">-- Nenhuma (mostrar todos) --</option>
+                            ${variedadesOptions}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="varietyStartDate">Data Início:</label>
+                        <input type="date" id="varietyStartDate" required>
+                    </div>
+                    <div>
+                        <label for="varietyEndDate">Data Fim:</label>
+                        <input type="date" id="varietyEndDate" required>
+                    </div>
+                    <div>
+                        <label for="varietyCloudPercentage">Máx. Nuvens (%):</label>
+                        <input type="number" id="varietyCloudPercentage" value="5" min="0" max="100" style="width: 80px;">
+                    </div>
+                    <button type="submit">Iniciar Download da Variedade</button>
+                </form>
+            ` : '<p>Nenhuma variedade encontrada nos dados desta propriedade.</p>'}
+            <div id="propertyVarietyDownloadStatus" style="margin-top: 10px;"></div>
+        </div>
+    `;
+
+    // 3. Adicionar Event Listeners
     const talhoesSelecionados = new Set();
     const btnProcessarLote = document.getElementById('processarLoteBtn');
     const contadorLote = document.getElementById('contadorLote');
     const geeDownloadStatusEl = document.getElementById('geeDownloadStatus');
-    
-    let roiLayer = null; 
+    let roiLayer = null;
 
     const atualizarBotaoLote = () => {
         const totalSelecionados = talhoesSelecionados.size;
@@ -294,49 +338,82 @@ function displayROIDetails(roi) {
         const containerAcoes = document.getElementById('lote-actions');
         containerAcoes.style.display = totalSelecionados > 0 ? 'block' : 'none';
     };
-    btnProcessarLote.onclick = async () => {
-        const totalSelecionados = talhoesSelecionados.size;
-        if (totalSelecionados === 0) {
-            geeDownloadStatusEl.innerHTML = '<div class="warning">Nenhum talhão selecionado.</div>';
-            return;
-        }
-        const startDate = document.getElementById('geeStartDate').value;
-        const endDate = document.getElementById('geeEndDate').value;
-        // Captura o novo valor de porcentagem de nuvens
-        const cloudPercentage = document.getElementById('geeCloudPercentage').value;
 
-        if (!startDate || !endDate) {
-            geeDownloadStatusEl.innerHTML = '<div class="error">Por favor, selecione as datas de início e fim.</div>';
-            return;
-        }
-        const idsParaProcessar = Array.from(talhoesSelecionados);
-        geeDownloadStatusEl.innerHTML = `<div class="info">Iniciando processo para ${totalSelecionados} talhões...</div>`;
-        btnProcessarLote.disabled = true;
-        try {
-            // Passa o novo valor para a função da API
-            const result = await startBatchDownloadForIds(idsParaProcessar, startDate, endDate, cloudPercentage);
-            const downloadUrl = result.task_details.download_link;
-            geeDownloadStatusEl.innerHTML = `
-                <div class="success">
-                    ${result.message}<br>
-                    <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
-                    <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
-                </div>
-            `;
-            talhoesSelecionados.clear();
-            atualizarBotaoLote();
-            
-            if (roiLayer) {
-                roiLayer.resetStyle();
+    if(btnProcessarLote) {
+        btnProcessarLote.onclick = async () => {
+            const totalSelecionados = talhoesSelecionados.size;
+            if (totalSelecionados === 0) {
+                geeDownloadStatusEl.innerHTML = '<div class="warning">Nenhum talhão selecionado.</div>';
+                return;
+            }
+            const startDate = document.getElementById('geeStartDate').value;
+            const endDate = document.getElementById('geeEndDate').value;
+            const cloudPercentage = document.getElementById('geeCloudPercentage').value;
+            if (!startDate || !endDate) {
+                geeDownloadStatusEl.innerHTML = '<div class="error">Por favor, selecione as datas de início e fim.</div>';
+                return;
+            }
+            const idsParaProcessar = Array.from(talhoesSelecionados);
+            geeDownloadStatusEl.innerHTML = `<div class="info">Iniciando processo para ${totalSelecionados} talhões...</div>`;
+            btnProcessarLote.disabled = true;
+            try {
+                const result = await startBatchDownloadForIds(idsParaProcessar, startDate, endDate, cloudPercentage);
+                const downloadUrl = result.task_details.download_link;
+                geeDownloadStatusEl.innerHTML = `
+                    <div class="success">
+                        ${result.message}<br>
+                        <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
+                        <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
+                    </div>
+                `;
+                talhoesSelecionados.clear();
+                atualizarBotaoLote();
+                
+                if (roiLayer) {
+                    roiLayer.resetStyle();
+                }
+    
+            } catch (error) {
+                geeDownloadStatusEl.innerHTML = `<div class="error">Erro ao iniciar tarefa: ${error.message}</div>`;
+            } finally {
+                btnProcessarLote.disabled = false;
+            }
+        };
+    }
+
+    const propertyVarietyDownloadForm = document.getElementById('propertyVarietyDownloadForm');
+    if (propertyVarietyDownloadForm) {
+        propertyVarietyDownloadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const statusEl = document.getElementById('propertyVarietyDownloadStatus');
+            const propertyId = roi.roi_id;
+            const variety = document.getElementById('propertyVarietySelect').value;
+            const startDate = document.getElementById('varietyStartDate').value;
+            const endDate = document.getElementById('varietyEndDate').value;
+            const cloud = document.getElementById('varietyCloudPercentage').value;
+
+            if (!variety || !startDate || !endDate) {
+                statusEl.innerHTML = '<div class="error">Por favor, preencha todos os campos.</div>';
+                return;
             }
 
-        } catch (error) {
-            geeDownloadStatusEl.innerHTML = `<div class="error">Erro ao iniciar tarefa: ${error.message}</div>`;
-        } finally {
-            btnProcessarLote.disabled = false;
-        }
-    };
+            statusEl.innerHTML = '<div class="info">Iniciando tarefa de download para a variedade selecionada...</div>';
+            try {
+                const result = await startVarietyDownloadForProperty(propertyId, variety, startDate, endDate, cloud);
+                const downloadUrl = result.task_details.download_link;
+                statusEl.innerHTML = `
+                    <div class="success">
+                        ${result.message}<br>
+                        <strong><a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Clique aqui para baixar o arquivo ZIP</a>.</strong>
+                        <br><small>(Aguarde alguns instantes para o processamento ser concluído).</small>
+                    </div>`;
+            } catch (error) {
+                statusEl.innerHTML = `<div class="error">Erro ao iniciar tarefa: ${error.message}</div>`;
+            }
+        });
+    }
 
+    // 4. Lógica do Mapa
     if (window.roiMap) {
         window.roiMap.remove();
         window.roiMap = null;
@@ -345,9 +422,6 @@ function displayROIDetails(roi) {
     window.roiMap = initializeMapWithLayers('map');
 
     if (roi.geometria && roi.geometria.type === 'FeatureCollection') {
-        const estiloPadrao = { color: '#FF8C00', weight: 2, opacity: 0.9, fillColor: '#FFA500', fillOpacity: 0.2 };
-        const estiloHover = { weight: 4, fillOpacity: 0.5 };
-        const estiloSelecionado = { fillColor: '#3388ff', color: '#005eff', weight: 3, fillOpacity: 0.6 };
         
         roiLayer = L.geoJSON(roi.geometria, {
             style: estiloPadrao,
@@ -364,7 +438,12 @@ function displayROIDetails(roi) {
                     if (!talhaoId) return;
                     if (talhoesSelecionados.has(talhaoId)) {
                         talhoesSelecionados.delete(talhaoId);
-                        layer.setStyle(estiloPadrao);
+                        const selectedVariety = document.getElementById('propertyVarietySelect')?.value;
+                        if (selectedVariety && props.variedade === selectedVariety) {
+                            layer.setStyle(estiloVariedadeDestaque);
+                        } else {
+                            layer.setStyle(estiloPadrao);
+                        }
                     } else {
                         talhoesSelecionados.add(talhaoId);
                         layer.setStyle(estiloSelecionado);
@@ -375,7 +454,13 @@ function displayROIDetails(roi) {
                 layer.on({
                     mouseover: (e) => e.target.setStyle(estiloHover),
                     mouseout: (e) => {
-                        if (!talhoesSelecionados.has(talhaoId)) {
+                        // A lógica de estilo no mouseout agora precisa ser mais inteligente
+                        const selectedVariety = document.getElementById('propertyVarietySelect')?.value;
+                        if (talhoesSelecionados.has(talhaoId)) {
+                            e.target.setStyle(estiloSelecionado);
+                        } else if (selectedVariety && props.variedade === selectedVariety) {
+                            e.target.setStyle(estiloVariedadeDestaque);
+                        } else {
                             roiLayer.resetStyle(e.target);
                         }
                     }
@@ -387,5 +472,27 @@ function displayROIDetails(roi) {
         }
     } else {
         console.warn("A geometria recebida não é uma FeatureCollection ou está vazia.", roi);
+    }
+    
+    const propertyVarietySelect = document.getElementById('propertyVarietySelect');
+    if (propertyVarietySelect && roiLayer) {
+        propertyVarietySelect.addEventListener('change', (e) => {
+            const variedadeSelecionada = e.target.value;
+            
+            roiLayer.eachLayer(layer => {
+                const props = layer.feature.properties;
+                const talhaoId = props.roi_id;
+                
+                if (talhoesSelecionados.has(talhaoId)) {
+                    layer.setStyle(estiloSelecionado);
+                } 
+                else if (variedadeSelecionada && props.variedade === variedadeSelecionada) {
+                    layer.setStyle(estiloVariedadeDestaque);
+                } 
+                else {
+                    layer.setStyle(estiloPadrao);
+                }
+            });
+        });
     }
 }

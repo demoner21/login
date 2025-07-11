@@ -529,6 +529,22 @@ async def listar_talhoes_por_propriedade(conn, propriedade_id: int, user_id: int
     results = await conn.fetch(query, user_id, propriedade_id)
     return [dict(row) for row in results]
 
+@with_db_connection
+async def listar_talhoes_por_propriedade_e_variedade(conn, user_id: int, propriedade_id: int, variedade: str) -> List[Dict]:
+    """
+    Busca os IDs de todos os talhões de um usuário que correspondem
+    a uma propriedade e variedade específicas.
+    """
+    query = """
+        SELECT roi_id, nome_talhao
+        FROM regiao_de_interesse
+        WHERE user_id = $1
+          AND roi_pai_id = $2
+          AND tipo_roi = 'TALHAO'
+          AND metadata->>'variedade' ILIKE $3;
+    """
+    results = await conn.fetch(query, user_id, propriedade_id, f"%{variedade}%")
+    return [dict(row) for row in results]
 
 @with_db_connection
 async def listar_rois_por_ids_para_batch(conn, roi_ids: List[int], user_id: int) -> List[Dict]:

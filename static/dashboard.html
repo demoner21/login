@@ -31,7 +31,7 @@
                 <input type="text" id="propriedade_col" name="propriedade_col" required placeholder="Ex: Fazenda">
             </div>
             <div>
-                 <label for="talhao_col">Talhão:</label>
+                <label for="talhao_col">Talhão:</label>
                 <input type="text" id="talhao_col" name="talhao_col" required placeholder="Ex: TALHAO">
             </div>
             <div>
@@ -59,30 +59,9 @@
         </div>
     </section>
 
-    <section id="download-por-variedade">
-        <h2>Download de Imagens por Variedade</h2>
-        <form id="varietyDownloadForm">
-            <div>
-                <label for="varietyDownloadSelect">Variedade:</label>
-                <select id="varietyDownloadSelect" required>
-                    <option value="">-- Carregando Variedades --</option>
-                </select>
-            </div>
-            <div>
-                <label for="varietyStartDate">Data Início:</label>
-                <input type="date" id="varietyStartDate" required>
-            </div>
-            <div>
-                <label for="varietyEndDate">Data Fim:</label>
-                <input type="date" id="varietyEndDate" required>
-            </div>
-            <button type="submit">Gerar Links para Variedade</button>
-        </form>
-        <div id="varietyDownloadStatus" style="margin-top: 10px;"></div>
-    </section>
     <section id="visualizar">
         <h2>Minhas Regiões de Interesse (<span id="roiTotalCount">0</span>)</h2>
-    
+        
         <div id="roiFilters" class="search-container" style="margin-bottom: 1rem; display: flex; gap: 20px;">
             <div>
                 <label for="propertySelect" style="display: block; margin-bottom: 5px;">Filtrar por Propriedade:</label>
@@ -91,7 +70,7 @@
                 </select>
             </div>
             <div>
-                 <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
+                  <label for="varietySelect" style="display: block; margin-bottom: 5px;">Filtrar por Variedade:</label>
                 <select id="varietySelect">
                     <option value="">-- Todas as Variedades --</option>
                 </select>
@@ -111,6 +90,7 @@
         <div id="roiDetails" class="hidden">
             <h3>Detalhes da ROI</h3>
             <div id="roiInfo"></div>
+    
             <div id="map"></div>
             <button id="backToList">Voltar para lista</button>
         </div>
@@ -120,7 +100,7 @@
         <div class="modal-content">
             <header class="modal-header">
                 <h2>Editar Região de Interesse</h2>
-                 <button class="close-modal" onclick="closeEditModal()">&times;</button>
+                  <button class="close-modal" onclick="closeEditModal()">&times;</button>
             </header>
             <div class="modal-body">
                 <form id="editRoiForm">
@@ -130,7 +110,7 @@
                         <input type="text" id="editRoiName" name="nome" required>
                     </div>
                     <div>
-                        <label for="editRoiDescription">Descrição:</label>
+                         <label for="editRoiDescription">Descrição:</label>
                         <textarea id="editRoiDescription" name="descricao" rows="4"></textarea>
                     </div>
                     <div class="modal-footer">
@@ -140,7 +120,7 @@
                 </form>
                 <div id="editRoiStatus"></div>
             </div>
-        </div>
+         </div>
     </div>
 </main>
 

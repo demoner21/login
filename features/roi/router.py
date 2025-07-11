@@ -173,6 +173,43 @@ async def request_gee_download(
             status_code=500, detail="Erro ao processar a requisição no GEE.")
 
 @router.post(
+    "/propriedade/{propriedade_id}/download-por-variedade",
+    response_model=schemas.BatchDownloadResponse, # Reutiliza a resposta padrão de lote
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="[GEE] Inicia download para uma variedade dentro de uma propriedade"
+)
+async def download_images_for_variety_in_property(
+    propriedade_id: int,
+    request_data: schemas.VarietyDownloadRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Inicia um processo em segundo plano para baixar imagens para todos os talhões
+    de uma VARIEDADE específica que pertencem a uma PROPRIEDADE específica.
+    """
+    validate_date_range(
+        request_data.start_date.isoformat(),
+        request_data.end_date.isoformat()
+    )
+    user_id = current_user['id']
+    batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+    background_tasks.add_task(
+        roi_service.start_download_for_variety_in_property,
+        user_id=user_id,
+        propriedade_id=propriedade_id,
+        request_data=request_data
+    )
+
+    return {
+        "message": "A tarefa de download por variedade foi iniciada. O arquivo ZIP estará disponível em breve.",
+        "task_details": {
+            "download_link": f"/api/v1/roi/download-zip/{batch_folder_name}"
+        }
+    }
+
+@router.post(
     "/batch-download",
     response_model=schemas.BatchDownloadResponse,
     status_code=status.HTTP_202_ACCEPTED,

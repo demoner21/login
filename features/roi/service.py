@@ -187,6 +187,41 @@ class ROIService:
 
         talhoes = await queries.listar_talhoes_por_propriedade(propriedade_id, user_id)
         return [self._process_roi_data(t) for t in talhoes]
+    
+    async def start_download_for_variety_in_property(
+        self,
+        *,
+        user_id: int,
+        propriedade_id: int,
+        request_data: schemas.VarietyDownloadRequest
+    ) -> None:
+        """
+        Inicia um download em lote para uma variedade específica dentro de uma propriedade.
+        """
+        logger.info(f"Buscando talhões da variedade '{request_data.variedade}' na propriedade ID {propriedade_id}.")
+        
+        talhoes = await queries.listar_talhoes_por_propriedade_e_variedade(
+            user_id=user_id,
+            propriedade_id=propriedade_id,
+            variedade=request_data.variedade
+        )
+        
+        if not talhoes:
+            logger.warning("Nenhum talhão encontrado para os critérios fornecidos.")
+            # Poderia lançar um erro aqui, mas vamos apenas registrar e encerrar.
+            return
+
+        roi_ids = [t['roi_id'] for t in talhoes]
+        logger.info(f"Encontrados {len(roi_ids)} talhões. IDs: {roi_ids}. Disparando download em lote.")
+
+        # Reutiliza a lógica de download em lote existente
+        await self.start_batch_download_for_ids(
+            user_id=user_id,
+            roi_ids=roi_ids,
+            start_date=request_data.start_date.isoformat(),
+            end_date=request_data.end_date.isoformat(),
+            max_cloud_percentage=request_data.max_cloud_percentage
+        )
 
     async def get_gee_download_url(self, *, roi_id: int, user_id: int, request_data: schemas.DownloadRequest) -> Dict:
         """Gera uma URL de download do GEE para uma única ROI."""

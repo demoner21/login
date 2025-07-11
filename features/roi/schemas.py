@@ -65,6 +65,14 @@ class VarietyDownloadResult(BaseModel):
     status: str
     error_message: Optional[str] = None
 
+class VarietyDownloadRequest(BaseModel):
+    variedade: str = Field(..., description="Nome da variedade para download.")
+    start_date: date = Field(..., description="Data de início (YYYY-MM-DD).")
+    end_date: date = Field(..., description="Data de fim (YYYY-MM-DD).")
+    max_cloud_percentage: Optional[int] = Field(
+        5, ge=0, le=100, description="Percentual máximo de nuvens (0-100)."
+    )
+
 class BatchDownloadRequest(BaseModel):
     roi_ids: List[int] = Field(..., description="Lista de IDs das ROIs (talhões) a serem processadas.")
     start_date: date = Field(..., description="Data de início (YYYY-MM-DD) para a busca de imagens.")

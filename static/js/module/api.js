@@ -114,6 +114,22 @@ export async function deleteUserROI(roiId) {
     });
 }
 
+export async function startVarietyDownloadForProperty(propertyId, variety, startDate, endDate, cloudPercentage) {
+    const url = `/roi/propriedade/${propertyId}/download-por-variedade`;
+    return await fetchApi(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            variedade: variety,
+            start_date: startDate,
+            end_date: endDate,
+            max_cloud_percentage: parseInt(cloudPercentage, 10),
+        }),
+    });
+}
+
 export async function uploadShapefile(formData) {
     const response = await fetch(`${BASE_URL}/roi/upload-shapefile-splitter`, {
         method: 'POST',
