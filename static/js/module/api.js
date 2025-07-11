@@ -3,11 +3,11 @@ import { logout } from './auth-session.js';
 const BASE_URL = '/api/v1';
 async function refreshToken() {
     try {
-        await fetch(`${BASE_URL}/auth/refresh`, {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
             method: 'POST',
             credentials: 'include'
         });
-        return true
+        return res.ok;
     } catch (error) {
         console.error('Falha ao renovar o token:', error);
         return false;
@@ -38,11 +38,9 @@ export async function fetchApi(url, options = {}) {
 
         if (response.status === 401) {
             if (isRefreshing) {
-                // Se já há uma requisição de refresh em andamento, enfileira a nova
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then(() => {
-                    // Tenta novamente a requisição original
                     return fetch(`${BASE_URL}${url}`, config);
                 });
             }
@@ -52,18 +50,17 @@ export async function fetchApi(url, options = {}) {
             const refreshed = await refreshToken();
             if (refreshed) {
                 processQueue(null);
-                // Tenta novamente a requisição original após o refresh
                 response = await fetch(`${BASE_URL}${url}`, config);
             } else {
                 processQueue(new Error('Sessão expirada.'));
-                logout(); // Se o refresh falhar, desloga o usuário
+                logout();
                 throw new Error('Sessão expirada. Você foi desconectado.');
             }
         }
         
-        // Se a resposta final não for OK
         if (!response.ok) {
-            const error = await response.json().catch(() => ({ detail: 'Erro desconhecido.' }));
+            console.error(`Falha na requisição para: ${url}`);
+            const error = await response.json().catch(() => ({ detail: `Erro desconhecido na resposta do servidor (status: ${response.status})` }));
             throw new Error(error.detail || `Falha na requisição: ${response.statusText}`);
         }
 

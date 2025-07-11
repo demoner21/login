@@ -187,14 +187,17 @@ class ROIService:
 
         talhoes = await queries.listar_talhoes_por_propriedade(propriedade_id, user_id)
         return [self._process_roi_data(t) for t in talhoes]
-    
+        
+    # *** INÍCIO DA CORREÇÃO ***
     async def start_download_for_variety_in_property(
         self,
         *,
         user_id: int,
         propriedade_id: int,
-        request_data: schemas.VarietyDownloadRequest
+        request_data: schemas.VarietyDownloadRequest,
+        batch_folder_name: str # 1. Adicionado o parâmetro que faltava
     ) -> None:
+    # *** FIM DA CORREÇÃO ***
         """
         Inicia um download em lote para uma variedade específica dentro de uma propriedade.
         """
@@ -208,49 +211,19 @@ class ROIService:
         
         if not talhoes:
             logger.warning("Nenhum talhão encontrado para os critérios fornecidos.")
-            # Poderia lançar um erro aqui, mas vamos apenas registrar e encerrar.
             return
 
         roi_ids = [t['roi_id'] for t in talhoes]
         logger.info(f"Encontrados {len(roi_ids)} talhões. IDs: {roi_ids}. Disparando download em lote.")
 
-        # Reutiliza a lógica de download em lote existente
         await self.start_batch_download_for_ids(
             user_id=user_id,
             roi_ids=roi_ids,
             start_date=request_data.start_date.isoformat(),
             end_date=request_data.end_date.isoformat(),
-            max_cloud_percentage=request_data.max_cloud_percentage
+            max_cloud_percentage=request_data.max_cloud_percentage,
+            batch_folder_name=batch_folder_name
         )
-
-    async def get_gee_download_url(self, *, roi_id: int, user_id: int, request_data: schemas.DownloadRequest) -> Dict:
-        """Gera uma URL de download do GEE para uma única ROI."""
-        roi = await self.get_roi_by_id(roi_id=roi_id, user_id=user_id)
-        if not roi or not roi.get('geometria'):
-            raise ValueError("ROI não encontrada ou não possui geometria válida.")
-
-        geometria_para_gee = roi['geometria']
-        if geometria_para_gee.get('type') == 'FeatureCollection':
-            features = geometria_para_gee.get('features', [])
-            if not features:
-                raise ValueError("FeatureCollection da propriedade está vazia.")
-            geometrias_dos_talhoes = [shape(f['geometry']) for f in features]
-            geometria_unificada = unary_union(geometrias_dos_talhoes)
-            geometria_para_gee = mapping(geometria_unificada)
-
-        download_url = gee_service.get_download_url(
-            geometry=geometria_para_gee,
-            start_date=request_data.start_date,
-            end_date=request_data.end_date,
-            scale=request_data.scale
-        )
-
-        return {
-            "message": "URL de download gerada com sucesso.",
-            "roi_id": roi_id,
-            "roi_name": roi.get('nome'),
-            "download_url": download_url
-        }
 
     async def start_batch_download_for_ids(
         self,
@@ -260,11 +233,12 @@ class ROIService:
         start_date: str,
         end_date: str,
         bands: Optional[List[str]] = None,
-        max_cloud_percentage: int = 5
+        max_cloud_percentage: int = 5,
+        batch_folder_name: str
     ) -> None:
         logger.info(f"Iniciando download em lote para IDs: {roi_ids} do usuário {user_id}.")
         
-        output_base_dir = Path(f"static/downloads/user_{user_id}/batch_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        output_base_dir = Path(f"static/downloads/user_{user_id}/{batch_folder_name}")
         os.makedirs(output_base_dir, exist_ok=True)
 
         try:
@@ -278,7 +252,6 @@ class ROIService:
             for roi_dict in rois_to_process:
                 processed_roi = self._process_roi_data(roi_dict)
                 logger.info(f"Processando download para o talhão ID: {processed_roi['roi_id']}")
-
                 await gee_service.download_images_for_roi(
                     roi=processed_roi,
                     start_date=start_date,
@@ -287,7 +260,6 @@ class ROIService:
                     bands_to_download=bands,
                     max_cloud_percentage=max_cloud_percentage
                 )
-
             logger.info("Fase de download do GEE concluída.")
 
             zip_creator = ZipCreator()

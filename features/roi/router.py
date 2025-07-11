@@ -174,7 +174,7 @@ async def request_gee_download(
 
 @router.post(
     "/propriedade/{propriedade_id}/download-por-variedade",
-    response_model=schemas.BatchDownloadResponse, # Reutiliza a resposta padrão de lote
+    response_model=schemas.BatchDownloadResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="[GEE] Inicia download para uma variedade dentro de uma propriedade"
 )
@@ -193,13 +193,15 @@ async def download_images_for_variety_in_property(
         request_data.end_date.isoformat()
     )
     user_id = current_user['id']
+    
     batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
     background_tasks.add_task(
         roi_service.start_download_for_variety_in_property,
         user_id=user_id,
         propriedade_id=propriedade_id,
-        request_data=request_data
+        request_data=request_data,
+        batch_folder_name=batch_folder_name
     )
 
     return {
@@ -208,6 +210,7 @@ async def download_images_for_variety_in_property(
             "download_link": f"/api/v1/roi/download-zip/{batch_folder_name}"
         }
     }
+
 
 @router.post(
     "/batch-download",
@@ -223,8 +226,6 @@ async def download_images_for_selected_rois(
     """
     Inicia um processo em segundo plano para baixar imagens do Sentinel-2
     para uma lista específica de IDs de ROI (talhões).
-
-    A resposta é imediata, e o processo continua no servidor.
     """
     validate_date_range(
         request_data.start_date.isoformat(),
@@ -242,17 +243,16 @@ async def download_images_for_selected_rois(
         logger.info(f"Requisição de download em lote para {len(request_data.roi_ids)} ROIs recebida.")
 
         batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        future_zip_path = f"static/downloads/user_{user_id}/{batch_folder_name}/download_completo.zip"
         
-        # Adiciona a nova função de serviço à fila de tarefas
         background_tasks.add_task(
-            roi_service.start_batch_download_for_ids, # Nova função que criaremos a seguir
+            roi_service.start_batch_download_for_ids,
             user_id=user_id,
             roi_ids=request_data.roi_ids,
             start_date=request_data.start_date.isoformat(),
             end_date=request_data.end_date.isoformat(),
             bands=request_data.bands,
-            max_cloud_percentage=request_data.max_cloud_percentage
+            max_cloud_percentage=request_data.max_cloud_percentage,
+            batch_folder_name=batch_folder_name
         )
 
         return {
@@ -268,10 +268,11 @@ async def download_images_for_selected_rois(
             detail="Não foi possível iniciar a tarefa de download."
         )
 
-@router.get(
+@router.api_route(
     "/download-zip/{batch_folder_name}",
+    methods=["GET", "HEAD"],
     response_class=FileResponse,
-    summary="Baixa um arquivo ZIP de um lote processado"
+    summary="Baixa ou verifica um arquivo ZIP de um lote processado"
 )
 async def get_zip_file(
     batch_folder_name: str,

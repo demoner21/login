@@ -120,15 +120,24 @@ class EarthEngineService:
                 .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', max_cloud_percentage))
             )
 
-            image_list = collection.toList(collection.size())
-            num_images = image_list.size().getInfo()
+            num_images = collection.size().getInfo()
 
             if num_images == 0:
-                results.update({"status": "warning", "message": "Nenhuma imagem encontrada."})
+                logger.info(f"Nenhuma imagem encontrada para a ROI {roi_id} com os filtros aplicados.")
+                results.update({"status": "warning", "message": "Nenhuma imagem encontrada para os filtros aplicados."})
                 return results
 
             logger.info(f"Encontradas {num_images} imagens para a ROI {roi_id}.")
+            image_list = collection.toList(num_images)
+
             total_files_downloaded = 0
+            
+            semaphore = asyncio.Semaphore(5)
+
+            async def download_with_semaphore(session, image, band_name, region, filename, scale):
+                """Wrapper para adquirir o semáforo antes de chamar a função de download."""
+                async with semaphore:
+                    return await self._download_band_async(session, image, band_name, region, filename, scale)
             
             async with aiohttp.ClientSession() as session:
                 for i in range(num_images):
@@ -144,10 +153,10 @@ class EarthEngineService:
                     for band_name in bands:
                         filename = date_dir / f"sentinel2_{roi_id}_{date_str}_{band_name}.tif"
                         if not os.path.exists(filename):
-                            tasks.append(self._download_band_async(session, image, band_name, ee_region, filename, scale))
+                            tasks.append(download_with_semaphore(session, image, band_name, ee_region, filename, scale))
 
                     if tasks:
-                        logger.info(f"Iniciando download concorrente de {len(tasks)} bandas para a data {date_str}...")
+                        logger.info(f"Iniciando download de {len(tasks)} bandas para a data {date_str} (concorrência limitada)...")
                         download_results = await asyncio.gather(*tasks)
                         successful_downloads = [res for res in download_results if res]
                         total_files_downloaded += len(successful_downloads)
