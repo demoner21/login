@@ -195,3 +195,36 @@ export async function startBatchDownloadForIds(roiIds, startDate, endDate, cloud
         }),
     });
 }
+/**
+ * Faz o upload de um arquivo .zip para iniciar um job de análise.
+ * NOTA: Esta função faz a chamada fetch diretamente por lidar com FormData.
+ */
+export async function uploadAnalysisFile(roiId, file) {
+    const formData = new FormData();
+    formData.append('roi_id', roiId);
+    formData.append('file', file);
+
+    const response = await fetch(`${BASE_URL}/analysis/upload-analysis`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include' // Essencial para enviar os cookies de autenticação
+    });
+
+    if (response.status === 401) {
+        logout();
+        throw new Error('Sessão expirada. Você foi desconectado.');
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Falha ao iniciar o job de análise.');
+    }
+    return data;
+}
+
+/**
+ * Busca o status e os resultados de um job de análise específico.
+ */
+export async function getAnalysisJobStatus(jobId) {
+    return await fetchApi(`/analysis/jobs/${jobId}`);
+}
