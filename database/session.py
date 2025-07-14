@@ -40,3 +40,26 @@ def with_db_connection(func):
                 await conn.close()
                 logger.info("Conexão fechada")
     return wrapper
+
+def with_db_connection_bg(func):
+    """
+    Decorador de conexão com o DB para tarefas em background.
+    Não lança HTTPException, apenas registra o erro e o relança.
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        conn = None
+        try:
+            conn = await asyncpg.connect(**DB_CONFIG)
+            logger.info("BG Task: Conexão estabelecida")
+            result = await func(conn, *args, **kwargs)
+            logger.info("BG Task: Operação concluída")
+            return result
+        except Exception as e:
+            logger.error(f"BG Task: Erro de banco de dados: {str(e)}", exc_info=True)
+            raise  # Relança a exceção original para ser tratada pela tarefa
+        finally:
+            if conn:
+                await conn.close()
+                logger.info("BG Task: Conexão fechada")
+    return wrapper
