@@ -14,6 +14,7 @@ dependencies = [
     "tensorflow<2.11",
     "matplotlib",
     "scikit-learn",
+    "scikit-image",
     "rasterio",
     "shapely",
     "asyncpg",
