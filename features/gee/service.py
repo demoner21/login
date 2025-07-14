@@ -104,8 +104,8 @@ class EarthEngineService:
                 results["message"] = f"ROI {roi_id} não possui geometria."
                 return results
 
-            ALL_SENTINEL_BANDS = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']
-            bands = bands_to_download if bands_to_download and isinstance(bands_to_download, list) and bands_to_download else ALL_SENTINEL_BANDS
+            ALL_SENTINEL_BANDS = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12']
+            bands_for_gee = bands_to_download if bands_to_download and isinstance(bands_to_download, list) and bands_to_download else ALL_SENTINEL_BANDS
 
             prop_dir = output_base_dir / normalize_name(nome_propriedade, case='lower').replace(" ", "_")
             talhao_dir = prop_dir / normalize_name(nome_talhao, case='lower').replace(" ", "_")
@@ -114,7 +114,7 @@ class EarthEngineService:
             ee_geom = self._geometry_to_ee(roi['geometria'])
 
             collection = (
-                ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
                 .filterBounds(ee_geom)
                 .filterDate(start_date, end_date)
                 .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', max_cloud_percentage))
@@ -131,14 +131,13 @@ class EarthEngineService:
             image_list = collection.toList(num_images)
 
             total_files_downloaded = 0
-            
+
             semaphore = asyncio.Semaphore(5)
 
             async def download_with_semaphore(session, image, band_name, region, filename, scale):
-                """Wrapper para adquirir o semáforo antes de chamar a função de download."""
                 async with semaphore:
                     return await self._download_band_async(session, image, band_name, region, filename, scale)
-            
+
             async with aiohttp.ClientSession() as session:
                 for i in range(num_images):
                     image = ee.Image(image_list.get(i))
@@ -150,10 +149,23 @@ class EarthEngineService:
                     ee_region = ee_geom.bounds().getInfo()['coordinates']
 
                     tasks = []
-                    for band_name in bands:
-                        filename = date_dir / f"sentinel2_{roi_id}_{date_str}_{band_name}.tif"
+                    for band_gee_name in bands_for_gee:
+                        # --- INÍCIO DA CORREÇÃO ---
+                        band_name_for_file = band_gee_name
+                        if band_gee_name.upper().startswith('B') and not band_gee_name.upper().endswith('A'):
+                            try:
+                                numeric_part = int(band_gee_name[1:])
+                                band_name_for_file = f'B{numeric_part:02d}'
+                            except ValueError:
+                                pass
+
+                        # CORREÇÃO 1: Usar a variável correta 'band_name_for_file' para o nome do arquivo
+                        filename = date_dir / f"sentinel2_{roi_id}_{date_str}_{band_name_for_file}.tif"
+
                         if not os.path.exists(filename):
-                            tasks.append(download_with_semaphore(session, image, band_name, ee_region, filename, scale))
+                            # CORREÇÃO 2: Usar a variável correta 'band_gee_name' para a função de download
+                            tasks.append(download_with_semaphore(session, image, band_gee_name, ee_region, filename, scale))
+                        # --- FIM DA CORREÇÃO ---
 
                     if tasks:
                         logger.info(f"Iniciando download de {len(tasks)} bandas para a data {date_str} (concorrência limitada)...")
