@@ -481,7 +481,8 @@ async def listar_talhoes_por_propriedade_e_variedade(conn, user_id: int, proprie
 async def listar_rois_por_ids_para_batch(conn, roi_ids: List[int], user_id: int) -> List[Dict]:
     """
     Busca e retorna uma lista de ROIs a partir de uma lista de IDs,
-    verificando a propriedade do usuário. Otimizado para processos em lote.
+    verificando a propriedade do usuário e garantindo que os metadados sejam dicionários.
+    Otimizado para processos em lote.
     """
     try:
         if not roi_ids:
@@ -494,8 +495,25 @@ async def listar_rois_por_ids_para_batch(conn, roi_ids: List[int], user_id: int)
             FROM regiao_de_interesse
             WHERE user_id = $1 AND roi_id = ANY($2::int[]);
         """
-        rois = await conn.fetch(query, user_id, roi_ids)
-        return [dict(row) for row in rois]
+        rois_records = await conn.fetch(query, user_id, roi_ids)
+        
+        processed_rois = []
+        for record in rois_records:
+            row_dict = dict(record)
+            metadata = row_dict.get('metadata')
+            
+            if isinstance(metadata, str):
+                try:
+                    row_dict['metadata'] = json.loads(metadata)
+                except json.JSONDecodeError:
+                    logger.warning(f"Metadados da ROI {row_dict['roi_id']} são uma string JSON malformada. Retornando como dict vazio.")
+                    row_dict['metadata'] = {}
+            elif metadata is None:
+                row_dict['metadata'] = {}
+            
+            processed_rois.append(row_dict)
+            
+        return processed_rois
     except Exception as e:
         logger.error(f"Erro ao buscar ROIs em lote: {str(e)}", exc_info=True)
         raise
