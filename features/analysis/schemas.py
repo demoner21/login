@@ -5,8 +5,6 @@ from datetime import datetime, date
 class AnalysisJobResponse(BaseModel):
     """Resposta ao iniciar um novo job de análise."""
     job_id: int
-    roi_id: int
-    status: str
     message: str
 
 class AnalysisResultSchema(BaseModel):
@@ -20,12 +18,13 @@ class AnalysisResultSchema(BaseModel):
 class AnalysisJobStatusResponse(BaseModel):
     """Resposta detalhada ao consultar o status de um job."""
     job_id: int
-    roi_id: int
+    roi_id: Optional[int] = None
     status: str
     created_at: datetime
     completed_at: Optional[datetime] = None
     results: List[AnalysisResultSchema] = Field(default_factory=list)
     error_message: Optional[str] = None
+    child_jobs: List['AnalysisJobStatusResponse'] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
