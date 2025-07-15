@@ -132,7 +132,7 @@ async def atualizar_roi_route(roi_id: int, update_data: schemas.ROICreate, curre
     return updated_roi
 
 
-@router.delete("/{roi_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Remove uma ROI")
+@router.delete("/{roi_id}", status_code=status.HTTP_200_OK, summary="Remove uma ROI")
 async def deletar_roi_route(roi_id: int, current_user: dict = Depends(get_current_user)):
     """Remove uma ROI do banco de dados, verificando a propriedade."""
     # LÓGICA MOVIDA PARA O SERVIÇO
@@ -140,7 +140,7 @@ async def deletar_roi_route(roi_id: int, current_user: dict = Depends(get_curren
     if not deleted:
         raise HTTPException(
             status_code=404, detail="ROI não encontrada ou não pôde ser deletada")
-    return None
+    return {"message": "ROI deletada com sucesso", "status": "success"}
 
 
 @router.get("/propriedade/{propriedade_id}/talhoes", response_model=List[schemas.ROIResponse], summary="Lista talhões de uma propriedade")
