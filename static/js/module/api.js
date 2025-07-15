@@ -199,9 +199,9 @@ export async function startBatchDownloadForIds(roiIds, startDate, endDate, cloud
  * Faz o upload de um arquivo .zip para iniciar um job de análise.
  * NOTA: Esta função faz a chamada fetch diretamente por lidar com FormData.
  */
-export async function uploadAnalysisFile(roiId, file) {
+export async function uploadAnalysisFile(file) { // O roiId foi removido
     const formData = new FormData();
-    formData.append('roi_id', roiId);
+    // formData.append('roi_id', roiId); // Removido
     formData.append('file', file);
 
     const response = await fetch(`${BASE_URL}/analysis/upload-analysis`, {
