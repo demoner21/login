@@ -5,12 +5,14 @@ from datetime import datetime
 from pathlib import Path
 import re
 from collections import defaultdict
+from typing import List
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                      HTTPException, UploadFile, status)
 
 from features.auth.dependencies import get_current_user
-from features.roi.queries import obter_roi_por_id
+from features.roi.queries import listar_rois_por_ids_para_batch
+
 from services.shapefile_service import convert_3d_to_2d
 from utils.upload_utils import cleanup_temp_files, save_uploaded_files
 from . import queries, schemas
@@ -19,122 +21,127 @@ from .service import analysis_service
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-async def run_analysis_in_background(job_id: int, zip_path: Path, roi_id: int, user_id: int):
+async def run_multi_roi_analysis_in_background(parent_job_id: int, zip_path: Path, user_id: int):
     """
-    Função em background que busca arquivos .tif, agora esperando nomes padronizados.
+    Função em background que processa um .zip contendo imagens de múltiplos talhões.
     """
-    analysis_dir = zip_path.parent / f"analysis_{job_id}"
-    results_to_save = []
+    analysis_dir = zip_path.parent / f"analysis_{parent_job_id}"
     
     try:
-        logger.info(f"[Job {job_id}] Iniciando tarefa em background.")
-        await queries.update_job_status(job_id=job_id, status="PROCESSING")
+        logger.info(f"[Job Pai {parent_job_id}] Iniciando tarefa de análise em lote.")
+        await queries.update_job_status(job_id=parent_job_id, status="PROCESSING")
 
         analysis_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(analysis_dir)
-        logger.info(f"[Job {job_id}] Arquivo descompactado em: {analysis_dir}")
+        logger.info(f"[Job Pai {parent_job_id}] Arquivo descompactado em: {analysis_dir}")
 
-        roi_data = await obter_roi_por_id(roi_id=roi_id, user_id=user_id)
-        if not roi_data:
-             raise ValueError(f"ROI {roi_id} não encontrada para o usuário.")
-        metadata = roi_data.get('metadata', {})
-        if 'area_ha' in metadata:
-            hectares = metadata['area_ha']
-        elif 'area_total_ha' in metadata:
-            hectares = metadata['area_total_ha']
-        else:
-            raise ValueError(f"Não foi possível encontrar a área ('area_ha' or 'area_total_ha') nos metadados da ROI {roi_id}")
-
-        #file_pattern = re.compile(r'_(\d{4}-\d{2}-\d{2})_(B\d{2}A?)\.tif$')
-        file_pattern = re.compile(r'_(\d{4}-\d{2}-\d{2})_(B\d{1,2}A?)\.tif$')
+        # Padrão de arquivo que inclui o roi_id
+        file_pattern = re.compile(r'sentinel2_(\d+)_(\d{4}-\d{2}-\d{2})_(B\d+A?)\.tif$')
         
-        files_by_date = defaultdict(dict)
+        # Estrutura para agrupar arquivos por ROI e depois por data
+        files_by_roi_and_date = defaultdict(lambda: defaultdict(dict))
+        
         for tif_path in analysis_dir.rglob('*.tif'):
             match = file_pattern.search(tif_path.name)
             if match:
-                date_str, band_name = match.groups()
-                files_by_date[date_str][band_name] = tif_path
+                roi_id_str, date_str, band_name = match.groups()
+                files_by_roi_and_date[int(roi_id_str)][date_str][band_name] = tif_path
         
-        if not files_by_date:
-            raise FileNotFoundError("Nenhum arquivo .tif com nome padronizado (AAAA-MM-DD_BXX.tif) foi encontrado no ZIP.")
+        if not files_by_roi_and_date:
+            raise FileNotFoundError("Nenhum arquivo .tif com nome padronizado (sentinel2_{roi_id}_{data}_{banda}.tif) foi encontrado no ZIP.")
 
-        for date_str, band_paths_dict in files_by_date.items():
-            logger.info(f"[Job {job_id}] Processando data: {date_str}")
-            analysis_result = analysis_service.run_analysis_pipeline(
-                band_paths=band_paths_dict,
-                hectares=hectares
-            )
-            if analysis_result["status"] == "success":
-                results_to_save.append({
-                    "date_analyzed": datetime.strptime(date_str, "%Y-%m-%d").date(),
-                    "predicted_atr": analysis_result["predicted_atr"]
-                })
+        # Buscar metadados de todas as ROIs encontradas de uma vez
+        all_roi_ids = list(files_by_roi_and_date.keys())
+        rois_data = await listar_rois_por_ids_para_batch(roi_ids=all_roi_ids, user_id=user_id)
+        rois_metadata_map = {roi['roi_id']: roi for roi in rois_data}
 
-        if results_to_save:
-            await queries.save_analysis_results(job_id=job_id, results=results_to_save)
+        # Processar cada ROI encontrada no ZIP
+        for roi_id, files_by_date in files_by_roi_and_date.items():
+            child_job_id = await queries.create_analysis_job(user_id=user_id, roi_id=roi_id, parent_job_id=parent_job_id)
+            
+            try:
+                roi_meta = rois_metadata_map.get(roi_id)
+                if not roi_meta:
+                    raise ValueError(f"Metadados da ROI {roi_id} não encontrados ou não pertencem ao usuário.")
+                
+                # Extrai a área em hectares
+                metadata = roi_meta.get('metadata', {})
+                hectares = metadata.get('area_ha')
+                if hectares is None:
+                     raise ValueError(f"Não foi possível encontrar a área ('area_ha') nos metadados da ROI {roi_id}")
+
+                results_to_save = []
+                for date_str, band_paths_dict in files_by_date.items():
+                    logger.info(f"[Job Filho {child_job_id}] Processando data: {date_str} para ROI {roi_id}")
+                    analysis_result = analysis_service.run_analysis_pipeline(
+                        band_paths=band_paths_dict,
+                        hectares=hectares
+                    )
+                    if analysis_result["status"] == "success":
+                        results_to_save.append({
+                            "date_analyzed": datetime.strptime(date_str, "%Y-%m-%d").date(),
+                            "predicted_atr": analysis_result["predicted_atr"]
+                        })
+
+                if results_to_save:
+                    await queries.save_analysis_results(job_id=child_job_id, results=results_to_save)
+                
+                await queries.update_job_status(job_id=child_job_id, status="COMPLETED")
+                logger.info(f"[Job Filho {child_job_id}] Análise para ROI {roi_id} concluída com sucesso.")
+
+            except Exception as e:
+                logger.error(f"[Job Filho {child_job_id}] Erro na análise da ROI {roi_id}: {e}", exc_info=True)
+                await queries.update_job_status(job_id=child_job_id, status="FAILED", error_message=str(e))
         
-        await queries.update_job_status(job_id=job_id, status="COMPLETED")
-        logger.info(f"[Job {job_id}] Análise concluída com sucesso.")
+        await queries.update_job_status(job_id=parent_job_id, status="COMPLETED")
 
     except Exception as e:
-        logger.error(f"[Job {job_id}] Erro na tarefa de background: {e}", exc_info=True)
-        await queries.update_job_status(job_id=job_id, status="FAILED", error_message=str(e))
+        logger.error(f"[Job Pai {parent_job_id}] Erro na tarefa de background: {e}", exc_info=True)
+        await queries.update_job_status(job_id=parent_job_id, status="FAILED", error_message=str(e))
     finally:
         cleanup_temp_files(zip_path.parent)
-        logger.info(f"[Job {job_id}] Limpeza dos arquivos temporários concluída.")
+        logger.info(f"[Job Pai {parent_job_id}] Limpeza dos arquivos temporários concluída.")
 
 
 @router.post(
     "/upload-analysis",
     response_model=schemas.AnalysisJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="[Análise] Faz upload de imagens para análise"
+    summary="[Análise] Faz upload de imagens para análise em lote"
 )
 async def upload_for_analysis(
     background_tasks: BackgroundTasks,
-    roi_id: int = Form(...),
-    file: UploadFile = File(..., description="Arquivo .zip contendo as pastas de imagens."),
+    file: UploadFile = File(..., description="Arquivo .zip contendo imagens de um ou mais talhões."),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Recebe um pacote de imagens .zip para uma ROI específica, inicia um job de
-    análise em background e retorna o ID do job para consulta futura.
+    Recebe um pacote de imagens .zip, inicia um job de análise em lote
+    em background e retorna o ID do job "pai" para consulta futura.
     """
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="O arquivo deve ser no formato .zip")
 
-    # Verifica se a ROI pertence ao usuário
-    roi = await obter_roi_por_id(roi_id=roi_id, user_id=current_user['id'])
-    if not roi:
-        raise HTTPException(status_code=404, detail=f"ROI com ID {roi_id} não encontrada ou não pertence ao usuário.")
-
     try:
-        # Salva o arquivo ZIP temporariamente
         temp_zip_path = save_uploaded_files([file])
 
-        # Cria o job no banco de dados
-        job_id = await queries.create_analysis_job(user_id=current_user['id'], roi_id=roi_id)
+        # Cria o job "pai" no banco de dados, sem roi_id
+        parent_job_id = await queries.create_analysis_job(user_id=current_user['id'], roi_id=None)
 
-        # Adiciona a tarefa pesada para ser executada em background
         background_tasks.add_task(
-            run_analysis_in_background,
-            job_id=job_id,
+            run_multi_roi_analysis_in_background,
+            parent_job_id=parent_job_id,
             zip_path=temp_zip_path / file.filename,
-            roi_id=roi_id,
             user_id=current_user['id']
         )
         
         return {
-            "job_id": job_id,
-            "roi_id": roi_id,
-            "status": "PENDING",
-            "message": "O job de análise foi criado e está na fila para processamento."
+            "job_id": parent_job_id,
+            "message": "O job de análise em lote foi criado e está na fila para processamento."
         }
     except Exception as e:
-        logger.error(f"Erro ao iniciar o job de upload para análise: {e}", exc_info=True)
+        logger.error(f"Erro ao iniciar o job de upload para análise em lote: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Não foi possível iniciar o job de análise.")
-
 
 @router.get(
     "/jobs/{job_id}",
