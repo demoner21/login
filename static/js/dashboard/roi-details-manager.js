@@ -17,7 +17,7 @@ const talhoesSelecionados = new Set();
  */
 async function handleAnalysisUpload(e) {
     e.preventDefault();
-    const roiId = document.getElementById('analysisRoiId').value;
+    // const roiId = document.getElementById('analysisRoiId').value;
     const fileInput = document.getElementById('analysisZipFile');
     const statusContainer = document.getElementById('analysisStatusContainer');
     const submitBtn = document.getElementById('startAnalysisBtn');
@@ -32,7 +32,7 @@ async function handleAnalysisUpload(e) {
     submitBtn.disabled = true;
 
     try {
-        const result = await uploadAnalysisFile(roiId, file);
+        const result = await uploadAnalysisFile(file); // roiId, 
         statusContainer.innerHTML = `<div class="success">${result.message} (Job ID: ${result.job_id})</div>`;
         pollJobStatus(result.job_id, statusContainer);
     } catch (error) {
@@ -47,10 +47,9 @@ async function handleAnalysisUpload(e) {
  * Verifica o status de um job de análise periodicamente.
  */
 function pollJobStatus(jobId, statusEl) {
-    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>A tarefa foi iniciada... Verificando status.</div>`;
-
+    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>A tarefa em lote foi iniciada... Verificando status.</div>`;
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutos de timeout
+    const maxAttempts = 120; // 10 minutos de timeout
 
     const intervalId = setInterval(async () => {
         if (++attempts > maxAttempts) {
@@ -60,48 +59,46 @@ function pollJobStatus(jobId, statusEl) {
         }
 
         try {
-            const response = await fetch(`/api/v1/roi/jobs/${jobId}/status`);
-            if (!response.ok) {
-                clearInterval(intervalId);
-                statusEl.innerHTML = `<div class="error">Erro ao consultar o status da tarefa.</div>`;
-                return;
+            // A rota de consulta é a mesma, mas agora ela retorna uma estrutura hierárquica
+            const job = await getAnalysisJobStatus(jobId);
+            
+            let statusHTML = '';
+            // Renderiza o status do Job Pai
+            statusHTML += `<div><strong>Job em Lote #${job.job_id}</strong> - Status: <span class="status-${job.status.toLowerCase()}">${job.status}</span></div>`;
+            
+            if (job.error_message) {
+                 statusHTML += `<div class="error-details">Motivo da falha: ${job.error_message}</div>`;
             }
 
-            const job = await response.json();
-            
-            switch (job.status) {
-                case 'COMPLETED':
-                    clearInterval(intervalId);
-                    statusEl.innerHTML = `<div class="success"><strong>Tarefa Concluída!</strong><br>${job.message || ''}</div>`;
+            // Renderiza o status dos Jobs Filhos
+            if (job.child_jobs && job.child_jobs.length > 0) {
+                statusHTML += '<ul class="child-job-list">';
+                job.child_jobs.forEach(child => {
+                    statusHTML += `<li>Talhão (ROI ID: ${child.roi_id}) - Status: <span class="status-${child.status.toLowerCase()}">${child.status}</span>`;
+                    if (child.status === 'COMPLETED' && child.results.length > 0) {
+                        statusHTML += `<ul>`;
+                        child.results.forEach(res => {
+                             statusHTML += `<li>Data: ${res.date_analyzed} -> ATR Predito: ${res.predicted_atr.toFixed(4)}</li>`;
+                        });
+                        statusHTML += `</ul>`;
+                    } else if (child.status === 'FAILED') {
+                        statusHTML += `<div class="error-details-child">Falha: ${child.error_message}</div>`;
+                    }
+                    statusHTML += '</li>';
+                });
+                statusHTML += '</ul>';
+            }
 
-                    window.location.href = `/api/v1/roi/jobs/${jobId}/result`;
-                    /*
-                    const downloadBtn = document.createElement('a');
-                    downloadBtn.href = `/api/v1/roi/jobs/${jobId}/result`;
-                    downloadBtn.textContent = 'Baixar Arquivo ZIP';
-                    downloadBtn.className = 'btn-download';
-                    downloadBtn.style.marginTop = '10px';
-                    downloadBtn.style.display = 'inline-block';
-                    statusEl.appendChild(downloadBtn);*/
-                    break;
+            statusEl.innerHTML = statusHTML;
 
-                case 'FAILED':
-                    clearInterval(intervalId);
-                    statusEl.innerHTML = `<div class="error"><strong>Falha na Tarefa</strong><br>${job.message || 'Ocorreu um erro desconhecido.'}</div>`;
-                    break;
-
-                case 'PROCESSING':
-                    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Processando...<br><small>${job.message || ''}</small></div>`;
-                    break;
-                
-                case 'PENDING':
-                    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Aguardando na fila...</div>`;
-                    break;
+            // Para o polling se o job pai estiver concluído ou falhou
+            if (job.status === 'COMPLETED' || job.status === 'FAILED') {
+                clearInterval(intervalId);
             }
 
         } catch (error) {
             clearInterval(intervalId);
-            statusEl.innerHTML = `<div class="error">Erro de rede ao consultar o status da tarefa.</div>`;
+            statusEl.innerHTML = `<div class="error">Erro de rede ao consultar o status da tarefa: ${error.message}</div>`;
             console.error("Polling error:", error);
         }
     }, 5000); // Verifica a cada 5 segundos
@@ -110,60 +107,65 @@ function pollJobStatus(jobId, statusEl) {
 /**
  * Função auxiliar para verificar a existência de um arquivo ZIP no servidor.
  */
-function pollForFile(downloadUrl, statusEl) {
-    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Processando no servidor... Por favor, aguarde.</div>`;
-    
+function pollDownloadJobStatus(jobId, statusEl) {
+    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>A tarefa de download foi iniciada... Verificando status.</div>`;
     let attempts = 0;
-    const maxAttempts = 3; // Limite de 5 minutos (60 tentativas * 5 segundos)
+    const maxAttempts = 12;
 
     const intervalId = setInterval(async () => {
-        attempts++;
-
-        // 1. Condição de Timeout
-        if (attempts > maxAttempts) {
+        if (++attempts > maxAttempts) {
             clearInterval(intervalId);
-            statusEl.innerHTML = `<div class="error">A tarefa demorou muito para responder (Timeout). Verifique o status mais tarde ou contate o suporte.</div>`;
+            statusEl.innerHTML = `<div class="error">Timeout: A tarefa de download demorou muito para responder.</div>`;
             return;
         }
 
         try {
-            // 2. Tenta acessar o arquivo ZIP esperado
-            const zipResponse = await fetch(downloadUrl, { method: 'HEAD' });
-
-            if (zipResponse.ok) { // Status 200 - SUCESSO
+            const response = await fetch(`/api/v1/roi/jobs/${jobId}/status`);
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log(`Job de download ${jobId} ainda não encontrado, tentando novamente...`);
+                    return;
+                }
                 clearInterval(intervalId);
-                statusEl.innerHTML = `<div class="success">Arquivo pronto! Iniciando download...</div>`;
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = downloadUrl.split('/').pop() || 'download.zip';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                statusEl.innerHTML = `<div class="error">Erro ao consultar o status da tarefa de download.</div>`;
                 return;
             }
 
-            // 3. Se o ZIP não foi encontrado (404), verifica se há um arquivo de log
-            if (zipResponse.status === 404) {
-                const logFileUrl = downloadUrl.replace('download_completo.zip', 'INFO.txt');
-                const logResponse = await fetch(logFileUrl);
+            const job = await response.json();
+            
+            let statusHTML = `<div class="info"><strong>Status do Download:</strong> ${job.message || job.status}</div>`;
 
-                if (logResponse.ok) { // Arquivo de log encontrado - FALHA CONTROLADA
+            switch (job.status) {
+                case 'COMPLETED':
                     clearInterval(intervalId);
-                    const errorMessage = await logResponse.text();
-                    statusEl.innerHTML = `<div class="warning"><strong>A tarefa foi concluída, mas não gerou arquivos.</strong><br><pre style="white-space: pre-wrap; margin-top: 10px;">Motivo: ${errorMessage}</pre></div>`;
-                    return;
-                }
+                    statusEl.innerHTML = `<div class="success"><strong>Download Concluído!</strong><br>${job.message} Iniciando download do arquivo...</div>`;
+                    
+                    const downloadUrl = `/api/v1/roi/jobs/${job.job_id}/result`;
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = downloadUrl.split('/').pop() || 'download.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    break;
+                case 'FAILED':
+                    clearInterval(intervalId);
+                    statusEl.innerHTML = `<div class="error"><strong>Falha na Tarefa de Download</strong><br>${job.message || 'Ocorreu um erro desconhecido.'}</div>`;
+                    break;
+                case 'PROCESSING':
+                    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Processando download...<br><small>${job.message || ''}</small></div>`;
+                    break;
+                default:
+                    statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Aguardando na fila...<br><small>${job.status}</small></div>`;
+                    break;
             }
 
-            // Se chegou aqui, o status não é 200 nem 404, ou o 404 não tinha um arquivo de log. Continua tentando.
-            statusEl.innerHTML = `<div class="info"><span class="loading-spinner"></span>Processando no servidor... Tentativa ${attempts} de ${maxAttempts}.</div>`;
-
         } catch (error) {
-            console.error("Erro na verificação do arquivo:", error);
-            statusEl.innerHTML = `<div class="error">Ocorreu um erro de rede ao verificar o status do arquivo. Verifique sua conexão.</div>`;
             clearInterval(intervalId);
+            statusEl.innerHTML = `<div class="error">Erro de rede ao consultar o status da tarefa de download.</div>`;
+            console.error("Polling de download error:", error);
         }
-    }, 5000);
+    }, 5000); // Verifica a cada 5 segundos
 }
 /**
  * Renderiza o conteúdo da tela de detalhes da ROI.
@@ -181,11 +183,10 @@ function renderROIDetailsContent(roi) {
     const variedadesOptions = [...variedadesNaPropriedade].map(v => `<option value="${v}">${v}</option>`).join('');
 
     const roiInfoContainer = document.getElementById('roiInfo');
-    
     // TEMPLATE HTML UNIFICADO
     roiInfoContainer.innerHTML = `
         <p><strong>Propriedade:</strong> ${roi.nome_propriedade || roi.nome}</p>
-        <p><strong>Descrição:</strong> ${roi.descricao || 'Não informada'}</p>
+        <p><strong>Descrição:</strong> ${roi.descricao ||'Não informada'}</p>
 
         <hr>
 
@@ -240,11 +241,11 @@ function renderROIDetailsContent(roi) {
                     <div>
                         <label for="varietyStartDate">Data Início:</label>
                         <input type="date" id="varietyStartDate" required>
-                    </div>
+                     </div>
                     <div>
                         <label for="varietyEndDate">Data Fim:</label>
                         <input type="date" id="varietyEndDate" required>
-                    </div>
+                     </div>
                     <div>
                         <label for="varietyCloudPercentage">Máx. Nuvens (%):</label>
                         <input type="number" id="varietyCloudPercentage" value="5" min="0" max="100" style="width: 80px;">
@@ -291,7 +292,7 @@ function setupDetailsEventListeners(roi) {
                 const result = await startBatchDownloadForIds(idsParaProcessar, startDate, endDate, cloudPercentage);
 
                 if (result && result.job_id) {
-                    pollJobStatus(result.job_id, geeDownloadStatusEl);
+                    pollDownloadJobStatus(result.job_id, geeDownloadStatusEl);
                 } else {
                     throw new Error("A resposta do servidor não incluiu um ID de tarefa válido.");
                 }
@@ -314,7 +315,7 @@ function setupDetailsEventListeners(roi) {
         propertyVarietyDownloadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const statusEl = document.getElementById('propertyVarietyDownloadStatus');
-            const propertyId = document.getElementById('analysisRoiId').value;
+            const propertyId = roi.roi_id; // Usa o ID da ROI atual
             const variety = document.getElementById('propertyVarietySelect').value;
             const startDate = document.getElementById('varietyStartDate').value;
             const endDate = document.getElementById('varietyEndDate').value;
@@ -328,9 +329,8 @@ function setupDetailsEventListeners(roi) {
 
             try {
                 const result = await startVarietyDownloadForProperty(propertyId, variety, startDate, endDate, cloud);
-
                 if (result && result.job_id) {
-                    pollJobStatus(result.job_id, statusEl);
+                    pollDownloadJobStatus(result.job_id, statusEl);
                 } else {
                     throw new Error("A resposta do servidor não incluiu um ID de tarefa válido.");
                 }
