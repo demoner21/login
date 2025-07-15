@@ -14,6 +14,8 @@ from shapely.ops import unary_union
 from utils.upload_utils import save_uploaded_files, cleanup_temp_files
 from services.shapefile_service import ShapefileSplitterProcessor
 from features.gee.service import gee_service
+from features.jobs.queries import update_job_status
+from uuid import UUID
 from utils.text_normalizer import normalize_name
 from . import queries, schemas
 
@@ -192,17 +194,18 @@ class ROIService:
     async def start_download_for_variety_in_property(
         self,
         *,
+        job_id: UUID,
         user_id: int,
         propriedade_id: int,
         request_data: schemas.VarietyDownloadRequest,
-        batch_folder_name: str # 1. Adicionado o parâmetro que faltava
+        #batch_folder_name: str
     ) -> None:
-    # *** FIM DA CORREÇÃO ***
         """
-        Inicia um download em lote para uma variedade específica dentro de uma propriedade.
+        Busca os talhões de uma variedade e delega o download para a função de lote principal.
         """
-        logger.info(f"Buscando talhões da variedade '{request_data.variedade}' na propriedade ID {propriedade_id}.")
+        logger.info(f"[Job {job_id}] Buscando talhões da variedade '{request_data.variedade}' na propriedade ID {propriedade_id}.")
         
+        # Busca os IDs dos talhões que correspondem aos critérios
         talhoes = await queries.listar_talhoes_por_propriedade_e_variedade(
             user_id=user_id,
             propriedade_id=propriedade_id,
@@ -210,49 +213,62 @@ class ROIService:
         )
         
         if not talhoes:
-            logger.warning("Nenhum talhão encontrado para os critérios fornecidos.")
+            msg = "Nenhum talhão encontrado para os critérios de propriedade e variedade fornecidos."
+            logger.warning(f"[Job {job_id}] {msg}")
+            # Atualiza o job como falha se nada for encontrado
+            await update_job_status(job_id=job_id, status='FAILED', message=msg)
             return
 
         roi_ids = [t['roi_id'] for t in talhoes]
-        logger.info(f"Encontrados {len(roi_ids)} talhões. IDs: {roi_ids}. Disparando download em lote.")
+        logger.info(f"[Job {job_id}] Encontrados {len(roi_ids)} talhões. Disparando download em lote.")
 
+        # 2. DELEGUE para a função que já tem a lógica completa de job
         await self.start_batch_download_for_ids(
+            job_id=job_id,
             user_id=user_id,
             roi_ids=roi_ids,
             start_date=request_data.start_date.isoformat(),
             end_date=request_data.end_date.isoformat(),
-            max_cloud_percentage=request_data.max_cloud_percentage,
-            batch_folder_name=batch_folder_name
+            max_cloud_percentage=request_data.max_cloud_percentage
         )
 
     async def start_batch_download_for_ids(
         self,
         *,
+        job_id: UUID,
         user_id: int,
         roi_ids: List[int],
         start_date: str,
         end_date: str,
         bands: Optional[List[str]] = None,
         max_cloud_percentage: int = 5,
-        batch_folder_name: str
+        #batch_folder_name: str
     ) -> None:
-        logger.info(f"Iniciando download em lote para IDs: {roi_ids} do usuário {user_id}.")
-        
-        output_base_dir = Path(f"static/downloads/user_{user_id}/{batch_folder_name}")
+        logger.info(f"[Job {job_id}] Iniciando tarefa de download para IDs: {roi_ids}.")
+        output_base_dir = Path(f"static/downloads/user_{user_id}/{job_id}")
         os.makedirs(output_base_dir, exist_ok=True)
 
         try:
+            await update_job_status(job_id=job_id, status='PROCESSING', message='Iniciando download das imagens do GEE.')
+        
             rois_to_process = await queries.listar_rois_por_ids_para_batch(
                 user_id=user_id, roi_ids=roi_ids
             )
             if not rois_to_process:
-                logger.warning(f"Nenhuma ROI válida encontrada para os IDs: {roi_ids}.")
+                await update_job_status(job_id=job_id, status='FAILED', message='Nenhuma ROI válida foi encontrada para os IDs fornecidos.')
                 return
-            
+
+            download_warnings = []
+            total_files_downloaded_count = 0
+
             for roi_dict in rois_to_process:
                 processed_roi = self._process_roi_data(roi_dict)
-                logger.info(f"Processando download para o talhão ID: {processed_roi['roi_id']}")
-                await gee_service.download_images_for_roi(
+                roi_id = processed_roi['roi_id']
+                roi_name = processed_roi.get('nome_talhao', f"ID {roi_id}")
+
+                logger.info(f"Processando download para o talhão: {roi_name}")
+
+                result = await gee_service.download_images_for_roi(
                     roi=processed_roi,
                     start_date=start_date,
                     end_date=end_date,
@@ -260,26 +276,63 @@ class ROIService:
                     bands_to_download=bands,
                     max_cloud_percentage=max_cloud_percentage
                 )
-            logger.info("Fase de download do GEE concluída.")
+
+                if result.get("status") == "warning":
+                    warning_msg = f"Aviso para o Talhão '{roi_name}' (ID: {roi_id}): {result.get('message')}"
+                    logger.warning(warning_msg)
+                    download_warnings.append(warning_msg)
+                elif result.get("status") == "success":
+                    msg = result.get("message", "")
+                    files_downloaded = int(msg.split(" ")[0]) if msg and msg.split(" ")[0].isdigit() else 0
+                    total_files_downloaded_count += files_downloaded
+
+            logger.info(f"[Job {job_id}] Fase de download do GEE concluída.")
+
+            if total_files_downloaded_count == 0:
+                error_message = "Processo concluído, mas nenhuma imagem foi encontrada para os filtros aplicados."
+                logger.error(f"[Job {job_id}] {error_message}")
+                await update_job_status(job_id=job_id, status='FAILED', message=error_message)
+                return
 
             zip_creator = ZipCreator()
             zip_buffer = zip_creator.create_zip_from_directory(output_base_dir)
-
             zip_filename = output_base_dir / "download_completo.zip"
             with open(zip_filename, "wb") as f:
                 f.write(zip_buffer.getvalue())
-            logger.info(f"Arquivo ZIP final salvo em: {zip_filename}")
+            logger.info(f"[Job {job_id}] Arquivo ZIP final salvo em: {zip_filename}")
+
+            final_message = "Download concluído com sucesso."
+            if download_warnings:
+                final_message += f" {len(download_warnings)} talhões não tinham imagens disponíveis."
+
+            await update_job_status(
+                job_id=job_id,
+                status='COMPLETED',
+                message=final_message,
+                result_path=str(zip_filename)
+            )
 
         except Exception as e:
-            logger.error(f"Erro crítico durante o download em lote para os IDs {roi_ids}: {e}", exc_info=True)
+            error_message = f"Ocorreu um erro crítico durante o processamento: {e}"
+            logger.error(f"[Job {job_id}] {error_message}", exc_info=True)
+            await update_job_status(
+                job_id=job_id,
+                status='FAILED',
+                message=error_message
+            )
 
         finally:
-            logger.info("Iniciando limpeza dos arquivos temporários.")
-            for item in os.listdir(output_base_dir):
-                item_path = output_base_dir / item
-                if item_path.is_dir():
-                    shutil.rmtree(item_path)
-            logger.info(f"Limpeza concluída. Apenas o arquivo ZIP permanece em {output_base_dir}.")
+            logger.info(f"Iniciando limpeza do diretório do job {job_id}.")
+            for item_path in output_base_dir.iterdir():
+                if item_path.name != "download_completo.zip":
+                    try:
+                        if item_path.is_dir():
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    except Exception as e:
+                        logger.error(f"Não foi possível remover o item temporário {item_path}: {e}")
+            logger.info(f"Limpeza concluída.")
 
 
 roi_service = ROIService()

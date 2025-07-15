@@ -1,15 +1,16 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query, BackgroundTasks
 from typing import List, Optional
-from datetime import datetime
+from uuid import UUID
 from pathlib import Path
+
 from fastapi.responses import FileResponse
 from . import schemas
 from .service import roi_service
 from ..auth.dependencies import get_current_user
 from utils.validators import validate_date_range
+from features.jobs.queries import create_job, get_job_by_id
 
-# O prefixo foi removido daqui para ser gerenciado no main.py, tornando o router mais reutilizável.
 router = APIRouter(
     tags=["Regiões de Interesse (ROI)"],
     responses={404: {"description": "Não encontrado"}}
@@ -174,7 +175,7 @@ async def request_gee_download(
 
 @router.post(
     "/propriedade/{propriedade_id}/download-por-variedade",
-    response_model=schemas.BatchDownloadResponse,
+    response_model=dict, 
     status_code=status.HTTP_202_ACCEPTED,
     summary="[GEE] Inicia download para uma variedade dentro de uma propriedade"
 )
@@ -194,27 +195,25 @@ async def download_images_for_variety_in_property(
     )
     user_id = current_user['id']
     
-    batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    job_id = await create_job(user_id=user_id)
 
     background_tasks.add_task(
         roi_service.start_download_for_variety_in_property,
+        job_id=job_id,
         user_id=user_id,
         propriedade_id=propriedade_id,
-        request_data=request_data,
-        batch_folder_name=batch_folder_name
+        request_data=request_data
     )
-
+    
     return {
-        "message": "A tarefa de download por variedade foi iniciada. O arquivo ZIP estará disponível em breve.",
-        "task_details": {
-            "download_link": f"/api/v1/roi/download-zip/{batch_folder_name}"
-        }
+        "job_id": job_id,
+        "message": "A tarefa de download por variedade foi iniciada."
     }
 
 
 @router.post(
     "/batch-download",
-    response_model=schemas.BatchDownloadResponse,
+    response_model=dict,
     status_code=status.HTTP_202_ACCEPTED,
     summary="[GEE] Inicia download em lote para ROIs selecionadas"
 )
@@ -230,62 +229,57 @@ async def download_images_for_selected_rois(
     validate_date_range(
         request_data.start_date.isoformat(),
         request_data.end_date.isoformat()
-        )
-
-    try:
-        user_id = current_user['id']
-        if not request_data.roi_ids:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A lista de IDs de ROI não pode ser vazia."
-            )
-
-        logger.info(f"Requisição de download em lote para {len(request_data.roi_ids)} ROIs recebida.")
-
-        batch_folder_name = f"batch_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
-        background_tasks.add_task(
-            roi_service.start_batch_download_for_ids,
-            user_id=user_id,
-            roi_ids=request_data.roi_ids,
-            start_date=request_data.start_date.isoformat(),
-            end_date=request_data.end_date.isoformat(),
-            bands=request_data.bands,
-            max_cloud_percentage=request_data.max_cloud_percentage,
-            batch_folder_name=batch_folder_name
-        )
-
-        return {
-        "message": "A tarefa foi iniciada. O arquivo ZIP estará disponível em breve.",
-        "task_details": {
-            "download_link": f"/api/v1/roi/download-zip/{batch_folder_name}"
-        }
-    }
-    except Exception as e:
-        logger.error(f"Falha ao iniciar a tarefa de download em lote: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Não foi possível iniciar a tarefa de download."
-        )
-
-@router.api_route(
-    "/download-zip/{batch_folder_name}",
-    methods=["GET", "HEAD"],
-    response_class=FileResponse,
-    summary="Baixa ou verifica um arquivo ZIP de um lote processado"
-)
-async def get_zip_file(
-    batch_folder_name: str,
-    current_user: dict = Depends(get_current_user)
-):
-    user_id = current_user['id']
-    file_path = Path(f"static/downloads/user_{user_id}/{batch_folder_name}/download_completo.zip")
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado ou ainda não processado.")
-
-    return FileResponse(
-        path=file_path,
-        media_type='application/zip',
-        filename=f"{batch_folder_name}.zip"
     )
+    user_id = current_user['id']
+    if not request_data.roi_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A lista de IDs de ROI não pode ser vazia."
+        )
+
+    job_id = await create_job(user_id=user_id)
+    
+    logger.info(f"[Job {job_id}] Requisição de download em lote para {len(request_data.roi_ids)} ROIs recebida.")
+
+    background_tasks.add_task(
+        roi_service.start_batch_download_for_ids,
+        job_id=job_id,
+        user_id=user_id,
+        roi_ids=request_data.roi_ids,
+        start_date=request_data.start_date.isoformat(),
+        end_date=request_data.end_date.isoformat(),
+        bands=request_data.bands,
+        max_cloud_percentage=request_data.max_cloud_percentage
+    )
+
+    return {
+        "job_id": job_id,
+        "message": "A tarefa foi iniciada."
+    }
+
+@router.get("/jobs/{job_id}/status", summary="Consulta o status de um job de download")
+async def get_job_status_route(job_id: UUID, current_user: dict = Depends(get_current_user)):
+    job = await get_job_by_id(job_id=job_id, user_id=current_user['id'])
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado.")
+    return job
+
+@router.get(
+    "/jobs/{job_id}/result",
+    response_class=FileResponse,
+    summary="Baixa o arquivo de resultado de um job concluído"
+)
+async def get_job_result_file(job_id: UUID, current_user: dict = Depends(get_current_user)):
+    user_id = current_user['id']
+    job = await get_job_by_id(job_id=job_id, user_id=user_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job não encontrado.")
+    if job['status'] != 'COMPLETED' or not job['result_path']:
+        raise HTTPException(status_code=400, detail="O job não foi concluído com sucesso ou não gerou arquivo.")
+
+    file_path = Path(job['result_path']) 
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo de resultado não encontrado no servidor.")
+
+    return FileResponse(path=file_path, media_type='application/zip', filename=file_path.name)
