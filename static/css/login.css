@@ -1,63 +1,63 @@
-/* ===== VARIÁVEIS CUSTOMIZADAS ===== */
+/* ===== VARIÁVEIS CUSTOMIZADAS (TEMA MINIMALISTA) ===== */
 :root {
-    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --success-color: #10b981;
-    --error-color: #ef4444;
-    --warning-color: #f59e0b;
-    --shadow-light: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    --shadow-medium: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    --shadow-heavy: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    /* Paleta Principal */
+    --color-primary: #2c3e50;
+    --color-border: #bdc3c7;
+    --background-light: #f3f3f3;
+    --background-card: #ffffff;
+    --color-text: #2c3e50;
+    --color-text-muted: #7f8c8d;
+
+    /* Cores de Estado (Mais sóbrias) */
+    --success-color: #27ae60;
+    --error-color: #e74c3c;
+    --warning-color: #f39c12;
+
+    /* Sombras e Bordas */
+    --shadow-light: 0 4px 6px -1px rgba(0, 0, 0, 0.07);
+    --shadow-medium: 0 10px 15px -3px rgba(0, 0, 0, 0.07);
+    --shadow-heavy: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
     --border-radius-sm: 4px;
     --border-radius-md: 8px;
     --border-radius-lg: 12px;
+
+    /* Transições */
     --transition-base: all 0.2s ease-in-out;
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ===== LAYOUT PRINCIPAL ===== */
 body {
-    background: var(--primary-gradient);
+    background-color: var(--background-light);
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 20px;
+    font-family: sans-serif;
 }
 
 main.container {
     max-width: 450px;
     width: 100%;
-    background: var(--card-background-color);
+    background: var(--background-card);
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-heavy);
     padding: 0;
     overflow: hidden;
     position: relative;
+    border: 1px solid #e5e7eb;
 }
 
-/* ===== ANIMAÇÕES ===== */
+/* ===== ANIMAÇÕES (Inalteradas) ===== */
 @keyframes fadeIn {
-    from { 
-        opacity: 0; 
-        transform: translateY(20px); 
-    }
-    to { 
-        opacity: 1; 
-        transform: translateY(0); 
-    }
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes slideIn {
-    from { 
-        transform: translateX(10px);
-        opacity: 0;
-    }
-    to { 
-        transform: translateX(0);
-        opacity: 1;
-    }
+    from { transform: translateX(10px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
-
 @keyframes pulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.05); }
@@ -69,32 +69,24 @@ main.container {
     animation: fadeIn 0.4s ease-out;
     padding: 40px;
 }
-
 .form-container.active {
     display: block;
 }
-
 .form-header {
     text-align: center;
     margin-bottom: 32px;
 }
-
 .form-header h1 {
     margin-bottom: 8px;
     font-size: 1.875rem;
     font-weight: 700;
-    background: var(--primary-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-primary);
 }
-
 .form-header .subtitle {
-    color: var(--muted-color);
+    color: var(--color-text-muted);
     font-size: 0.875rem;
     margin: 0;
 }
-
 .auth-form {
     display: flex;
     flex-direction: column;
@@ -105,48 +97,44 @@ main.container {
 .input-group {
     position: relative;
 }
-
 .input-group label {
     font-weight: 500;
     margin-bottom: 6px;
     display: block;
-    color: var(--color);
+    color: var(--color-text);
     font-size: 0.875rem;
 }
-
 .input-group input {
     transition: var(--transition-base);
-    border: 2px solid var(--form-element-border-color);
+    border: 1px solid var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 12px 16px;
     font-size: 1rem;
+    width: 100%;
+    background-color: #fff;
+    color: var(--color-text);
 }
-
 .input-group input:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.1);
     outline: none;
 }
-
 .input-group input.error {
     border-color: var(--error-color);
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.1);
 }
-
 .input-group input.success {
     border-color: var(--success-color);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.1);
 }
 
 /* ===== CAMPO DE SENHA ===== */
 .password-field {
     position: relative;
 }
-
 .password-field input {
     padding-right: 48px;
 }
-
 .toggle-password {
     position: absolute;
     right: 12px;
@@ -159,14 +147,13 @@ main.container {
     border-radius: var(--border-radius-sm);
     transition: var(--transition-base);
     font-size: 1.2em;
+    color: var(--color-text-muted);
 }
-
 .toggle-password:hover {
-    background-color: var(--dropdown-hover-background-color);
+    color: var(--color-primary);
 }
-
 .toggle-password:focus {
-    outline: 2px solid var(--primary);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
@@ -177,23 +164,13 @@ main.container {
     font-weight: 500;
     display: none;
 }
-
 .password-strength.show {
     display: block;
     animation: slideIn 0.3s ease-out;
 }
-
-.password-strength.weak {
-    color: var(--error-color);
-}
-
-.password-strength.medium {
-    color: var(--warning-color);
-}
-
-.password-strength.strong {
-    color: var(--success-color);
-}
+.password-strength.weak { color: var(--error-color); }
+.password-strength.medium { color: var(--warning-color); }
+.password-strength.strong { color: var(--success-color); }
 
 /* ===== OPÇÕES DO FORMULÁRIO ===== */
 .form-options {
@@ -202,17 +179,14 @@ main.container {
     align-items: center;
     margin: 8px 0;
 }
-
 .forgot-password {
     font-size: 0.875rem;
-    color: var(--primary);
+    color: var(--color-primary);
     text-decoration: none;
     transition: var(--transition-base);
 }
-
 .forgot-password:hover {
     text-decoration: underline;
-    opacity: 0.8;
 }
 
 /* ===== CHECKBOX CUSTOMIZADO ===== */
@@ -222,16 +196,15 @@ main.container {
     cursor: pointer;
     font-size: 0.875rem;
     margin: 0;
+    color: var(--color-text-muted);
 }
-
 .checkbox-container input[type="checkbox"] {
     display: none;
 }
-
 .checkmark {
     width: 18px;
     height: 18px;
-    border: 2px solid var(--form-element-border-color);
+    border: 1px solid var(--color-border);
     border-radius: var(--border-radius-sm);
     margin-right: 8px;
     position: relative;
@@ -241,39 +214,27 @@ main.container {
     justify-content: center;
     flex-shrink: 0;
 }
-
 .checkbox-container input[type="checkbox"]:checked + .checkmark {
-    background: var(--primary-gradient);
-    border-color: transparent;
+    background: var(--color-primary);
+    border-color: var(--color-primary);
 }
-
 .checkbox-container input[type="checkbox"]:checked + .checkmark::after {
     content: '✓';
     color: white;
     font-size: 12px;
     font-weight: bold;
 }
-
-.terms-container {
-    margin: 16px 0;
-}
-
-.terms-container .checkbox-container {
-    line-height: 1.4;
-}
-
+.terms-container { margin: 16px 0; }
+.terms-container .checkbox-container { line-height: 1.4; }
 .terms-container .link {
-    color: var(--primary);
+    color: var(--color-primary);
     text-decoration: none;
 }
-
-.terms-container .link:hover {
-    text-decoration: underline;
-}
+.terms-container .link:hover { text-decoration: underline; }
 
 /* ===== BOTÕES ===== */
 .btn-primary {
-    background: var(--primary-gradient);
+    background: var(--color-primary);
     border: none;
     color: white;
     padding: 14px 24px;
@@ -285,39 +246,27 @@ main.container {
     position: relative;
     overflow: hidden;
     margin-top: 8px;
+    width: 100%;
 }
-
 .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: var(--shadow-medium);
+    opacity: 0.9;
 }
-
-.btn-primary:active {
-    transform: translateY(0);
-}
-
+.btn-primary:active { transform: translateY(0); }
 .btn-primary:disabled {
     opacity: 0.7;
     cursor: not-allowed;
     transform: none;
+    background-color: var(--color-border);
 }
-
 .btn-primary:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.2);
 }
-
-.btn-loading {
-    display: none;
-}
-
-.btn-primary.loading .btn-text {
-    display: none;
-}
-
-.btn-primary.loading .btn-loading {
-    display: inline;
-}
+.btn-loading { display: none; }
+.btn-primary.loading .btn-text { display: none; }
+.btn-primary.loading .btn-loading { display: inline; }
 
 /* ===== MENSAGENS ===== */
 .error-message, .success-message {
@@ -328,17 +277,15 @@ main.container {
     margin-top: 16px;
     animation: slideIn 0.3s ease-out;
 }
-
 .error-message {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(231, 76, 60, 0.1);
     color: var(--error-color);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(231, 76, 60, 0.2);
 }
-
 .success-message {
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(39, 174, 96, 0.1);
     color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    border: 1px solid rgba(39, 174, 96, 0.2);
 }
 
 /* ===== RODAPÉ DO FORMULÁRIO ===== */
@@ -346,26 +293,20 @@ main.container {
     text-align: center;
     margin-top: 32px;
     padding-top: 24px;
-    border-top: 1px solid var(--form-element-border-color);
+    border-top: 1px solid var(--color-border);
 }
-
 .form-footer p {
     margin: 0;
-    color: var(--muted-color);
+    color: var(--color-text-muted);
     font-size: 0.875rem;
 }
-
 .toggle-form {
-    color: var(--primary);
+    color: #fefefe;
     cursor: pointer;
     font-weight: 500;
     transition: var(--transition-base);
 }
-
-.toggle-form:hover {
-    text-decoration: underline;
-    opacity: 0.8;
-}
+.toggle-form:hover { text-decoration: underline; }
 
 /* ===== RESPONSIVIDADE ===== */
 @media (max-width: 640px) {
@@ -373,29 +314,36 @@ main.container {
         margin: 10px;
         border-radius: var(--border-radius-md);
     }
-    
-    .form-container {
-        padding: 24px;
-    }
-    
-    .form-header h1 {
-        font-size: 1.5rem;
-    }
-    
+    .form-container { padding: 24px; }
+    .form-header h1 { font-size: 1.5rem; }
     .form-options {
         flex-direction: column;
         gap: 12px;
         align-items: flex-start;
     }
-    
-    .checkbox-container {
-        font-size: 0.8rem;
-    }
+    .checkbox-container { font-size: 0.8rem; }
 }
 
-/* ===== TEMA ESCURO ===== */
+/* ===== TEMA ESCURO (Exemplo básico) ===== */
 @media (prefers-color-scheme: dark) {
+    :root {
+        --background-light: #212f3d;
+        --background-card: #2c3e50;
+        --color-border: #425c75;
+        --color-text: #f3f3f3;
+        --color-text-muted: #bdc3c7;
+    }
+    main.container {
+        border-color: #425c75;
+    }
+    .input-group input {
+        background-color: #2c3e50;
+        color: var(--color-text);
+    }
+    .toggle-password {
+        color: var(--color-text-muted);
+    }
     .toggle-password:hover {
-        background-color: rgba(255, 255, 255, 0.1);
+        color: var(--color-text);
     }
 }
