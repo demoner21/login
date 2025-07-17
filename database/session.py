@@ -1,8 +1,10 @@
 import asyncpg
 import logging
+from config import settings
 from functools import wraps
 from config import settings
 from utils.exception_utils import handle_exceptions
+from fastapi import Request, Depends, HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,6 @@ DB_CONFIG = {
     "port": settings.DB_PORT,
     "command_timeout": 60
 }
-
 
 def with_db_connection(func):
     """
@@ -63,3 +64,26 @@ def with_db_connection_bg(func):
                 await conn.close()
                 logger.info("BG Task: Conexão fechada")
     return wrapper
+
+async def get_db_connection(request: Request) -> asyncpg.Connection:
+    """
+    Dependência do FastAPI que adquire uma conexão do pool para uma requisição
+    e a libera automaticamente no final.
+    """
+    pool = request.app.state.pool
+    if pool is None:
+        raise HTTPException(
+            status_code=503, 
+            detail="Serviço indisponível: pool de conexões com o banco de dados não foi inicializado."
+        )
+
+    # Adquire uma conexão do pool
+    conn = await pool.acquire()
+    logger.info(f"Conexão {id(conn)} adquirida do pool.")
+    try:
+        # Disponibiliza a conexão para a rota
+        yield conn
+    finally:
+        # Libera a conexão de volta para o pool quando a requisição termina
+        await pool.release(conn)
+        logger.info(f"Conexão {id(conn)} liberada de volta para o pool.")
