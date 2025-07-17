@@ -18,6 +18,8 @@ from features.jobs.queries import update_job_status
 from uuid import UUID
 from utils.text_normalizer import normalize_name
 from . import queries, schemas
+from database.session import with_db_connection, get_db_connection
+import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +56,7 @@ class ROIService:
 
         return processed
 
-    async def process_shapefile_upload(self, *, files: Dict[str, UploadFile], propriedade_col: str, talhao_col: str, user_id: int) -> Dict:
+    async def process_shapefile_upload(self, *, conn: 'asyncpg.Connection', files: Dict[str, UploadFile], propriedade_col: str, talhao_col: str, user_id: int) -> Dict:
         """Orquestra o upload, processamento e criação de ROIs a partir de um shapefile."""
         temp_dir = None
         try:
@@ -88,6 +90,7 @@ class ROIService:
                 } for talhao_info in prop_info['talhoes']]
 
                 result = await queries.criar_propriedade_e_talhoes(
+                    conn=conn,
                     user_id=user_id,
                     property_data=prop_data_for_db,
                     plots_data=plots_data_for_db,

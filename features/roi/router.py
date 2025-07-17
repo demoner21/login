@@ -10,6 +10,8 @@ from .service import roi_service
 from ..auth.dependencies import get_current_user
 from utils.validators import validate_date_range
 from features.jobs.queries import create_job, get_job_by_id
+from database.session import with_db_connection, get_db_connection
+import asyncpg
 
 router = APIRouter(
     tags=["Regiões de Interesse (ROI)"],
@@ -32,14 +34,15 @@ async def create_rois_from_shapefile_by_property(
                            description="Coluna que identifica o 'Talhão'."),
     shp: UploadFile = File(...), shx: UploadFile = File(...), dbf: UploadFile = File(...),
     prj: UploadFile = File(None), cpg: UploadFile = File(None),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection),
 ):
     """Cria uma hierarquia de ROIs a partir de um único shapefile."""
     files = {'shp': shp, 'shx': shx, 'dbf': dbf, 'prj': prj, 'cpg': cpg}
     try:
         # LÓGICA MOVIDA PARA O SERVIÇO
-        # CORREÇÃO: Passando user_id em vez do objeto current_user inteiro.
         return await roi_service.process_shapefile_upload(
+            conn=conn,
             files=files,
             propriedade_col=propriedade_col,
             talhao_col=talhao_col,

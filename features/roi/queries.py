@@ -2,7 +2,7 @@ import logging
 import json
 from typing import List, Dict, Optional, Any
 
-from database.session import with_db_connection
+from database.session import with_db_connection, get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +121,9 @@ async def criar_roi(
         raise
 
 
-@with_db_connection
+
 async def criar_propriedade_e_talhoes(
-    conn,
+    conn: 'asyncpg.Connection',
     *,
     user_id: int,
     property_data: Dict,
