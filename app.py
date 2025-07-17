@@ -39,8 +39,8 @@ async def lifespan(app: FastAPI):
             database=settings.DB_NAME,
             host=settings.DB_HOST,
             port=settings.DB_PORT,
-            min_size=1,
-            max_size=10,
+            min_size=5,
+            max_size=20,
             command_timeout=60,
         )
         logger.info("Pool de conexões estabelecido com sucesso")
@@ -89,7 +89,8 @@ app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interess
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
 
 # 5. Arquivos estáticos
-app.mount("/static", StaticFiles(directory="static", html=True), name="static")
+#app.mount("/static", StaticFiles(directory="static", html=True), name="static")
+#$ gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:8000
 
 # 6. Health Check
 @app.get("/", tags=["Root"])
