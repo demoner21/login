@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from database.session import with_db_connection
@@ -129,3 +129,64 @@ async def update_user_password(conn, email: str, new_password: str):
         WHERE email = $2
     """, hashed_password, email)
     logger.info(f"Senha atualizada para o usuário {email}")
+
+@with_db_connection
+async def atualizar_senha_usuario_autenticado(conn, *, user_id: int, senha_atual: str, nova_senha: str) -> bool:
+    """
+    Verifica a senha atual de um usuário e, se for válida, atualiza para a nova senha.
+    """
+    # 1. Buscar o hash da senha atual do usuário
+    user_record = await conn.fetchrow("SELECT senha FROM usuario WHERE id = $1", user_id)
+    if not user_record:
+        raise ValueError("Usuário não encontrado.")
+
+    # 2. Verificar se a senha atual fornecida corresponde ao hash armazenado
+    if not verify_password(senha_atual, user_record['senha']):
+        raise ValueError("A senha atual está incorreta.")
+
+    # 3. Gerar o hash da nova senha (a função get_password_hash já valida a força)
+    novo_hash_senha = get_password_hash(nova_senha)
+
+    # 4. Atualizar a senha no banco de dados
+    await conn.execute("UPDATE usuario SET senha = $1 WHERE id = $2", novo_hash_senha, user_id)
+    logger.info(f"Senha atualizada com sucesso para o usuário ID {user_id}.")
+    return True
+
+@with_db_connection
+async def atualizar_dados_usuario(conn, *, user_id: int, update_data: Dict[str, Any]) -> Optional[dict]:
+    """
+    Atualiza os dados de um usuário (nome, email) no banco de dados.
+    Retorna os dados atualizados do usuário.
+    """
+    if not update_data:
+        raise ValueError("Nenhum dado fornecido para atualização.")
+
+    # Verifica se o email novo já está em uso por outro usuário
+    if "email" in update_data:
+        email_exists = await conn.fetchval(
+            "SELECT id FROM usuario WHERE email = $1 AND id != $2",
+            update_data["email"], user_id
+        )
+        if email_exists:
+            raise ValueError("O endereço de e-mail já está em uso por outra conta.")
+
+    # Constrói a query de atualização dinamicamente
+    set_clauses = []
+    params = []
+    param_idx = 1
+    for key, value in update_data.items():
+        set_clauses.append(f"{key} = ${param_idx}")
+        params.append(value)
+        param_idx += 1
+
+    params.append(user_id)
+    query = f"""
+        UPDATE usuario
+        SET {', '.join(set_clauses)}
+        WHERE id = ${param_idx}
+        RETURNING id, nome, email, role
+    """
+
+    updated_user = await conn.fetchrow(query, *params)
+    logger.info(f"Dados do usuário ID {user_id} atualizados com sucesso.")
+    return dict(updated_user) if updated_user else None
