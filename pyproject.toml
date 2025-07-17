@@ -30,7 +30,8 @@ dependencies = [
     "geemap",
     "geedim",
     "protobuf==3.20.*",
-    "httpx"
+    "httpx",
+    "fiona",
 ]
 
 [tool.setuptools]
