@@ -1,0 +1,49 @@
+/* CSS para a página de configurações */
+main {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+section {
+    background-color: #f9f9f9;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    border: 1px solid #ddd;
+}
+
+h3 {
+    margin-top: 0;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    color: #2c3e50;
+}
+
+form div {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+form label {
+    flex: 0 0 180px; /* Largura fixa para os labels */
+    font-weight: bold;
+    padding-right: 15px;
+}
+
+form input[type="text"],
+form input[type="email"],
+form input[type="password"] {
+    flex-grow: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.status-message {
+    margin-top: 1rem;
+    padding: 10px;
+    border-radius: 4px;
+    display: none; /* Escondido por padrão */
+}
