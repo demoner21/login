@@ -18,15 +18,10 @@ class ROIBase(BaseModel):
 
 
 class ROIResponse(ROIBase):
+    model_config = ConfigDict(from_attributes=True)
     roi_id: int
     data_criacao: Optional[datetime] = None
     data_modificacao: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
 
 
 class HierarchicalUploadResponse(BaseModel):
@@ -65,6 +60,7 @@ class VarietyDownloadResult(BaseModel):
     status: str
     error_message: Optional[str] = None
 
+
 class VarietyDownloadRequest(BaseModel):
     variedade: str = Field(..., description="Nome da variedade para download.")
     start_date: date = Field(..., description="Data de início (YYYY-MM-DD).")
@@ -73,22 +69,26 @@ class VarietyDownloadRequest(BaseModel):
         5, ge=0, le=100, description="Percentual máximo de nuvens (0-100)."
     )
 
+
 class BatchDownloadRequest(BaseModel):
-    roi_ids: List[int] = Field(..., description="Lista de IDs das ROIs (talhões) a serem processadas.")
-    start_date: date = Field(..., description="Data de início (YYYY-MM-DD) para a busca de imagens.")
-    end_date: date = Field(..., description="Data de fim (YYYY-MM-DD) para a busca de imagens.")
+    roi_ids: List[int] = Field(
+        ..., description="Lista de IDs das ROIs (talhões) a serem processadas.")
+    start_date: date = Field(
+        ..., description="Data de início (YYYY-MM-DD) para a busca de imagens.")
+    end_date: date = Field(...,
+                           description="Data de fim (YYYY-MM-DD) para a busca de imagens.")
     bands: Optional[List[str]] = Field(
         None,
         description="Lista opcional de bandas para download. Se omitido, baixa todas."
     ),
     max_cloud_percentage: Optional[int] = Field(
-        5, 
-        ge=0, 
-        le=100, 
+        5,
+        ge=0,
+        le=100,
         description="Percentual máximo de nuvens permitido (0-100)."
     )
+
 
 class BatchDownloadResponse(BaseModel):
     message: str
     task_details: Dict
-    
