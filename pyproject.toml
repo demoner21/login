@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.8,<3.10"
 dependencies = [
     "fastapi",
+    "pydantic[email]",
     "python-multipart",
     "uvicorn",
     "fastapi-structlog",
@@ -28,7 +29,8 @@ dependencies = [
     "natsort",
     "geemap",
     "geedim",
-    "protobuf==3.20.*"
+    "protobuf==3.20.*",
+    "httpx"
 ]
 
 [tool.setuptools]

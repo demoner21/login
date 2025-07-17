@@ -7,3 +7,4 @@ venv/
 .env
 authentication.log
 *.json
+tests/
