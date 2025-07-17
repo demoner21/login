@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Multiespectral - Configurações</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/settings.css">
+</head>
+<body>
+    <header>
+        <h1>Portal Multiespectral</h1>
+        <nav>
+            <a href="/static/dashboard.html#upload">Upload Shapefile</a> |
+            <a href="/static/dashboard.html#visualizar">Minhas Regiões</a> |
+            <a href="/static/settings.html">Configurações</a> |
+            <a href="#logout" id="logoutBtn">Sair</a>
+        </nav>
+    </header>
+
+    <main>
+        <h2>Configurações da Conta</h2>
+
+        <section id="user-data-section">
+            <h3>Meus Dados</h3>
+            <form id="userDataForm">
+                <div>
+                    <label for="userName">Nome:</label>
+                    <input type="text" id="userName" name="nome" required>
+                </div>
+                <div>
+                    <label for="userEmail">Email:</label>
+                    <input type="email" id="userEmail" name="email" required>
+                </div>
+                <button type="submit" id="updateDataBtn">Salvar Dados</button>
+            </form>
+            <div id="userDataStatus" class="status-message"></div>
+        </section>
+
+        <section id="password-section">
+            <h3>Alterar Senha</h3>
+            <form id="passwordUpdateForm">
+                <div>
+                    <label for="currentPassword">Senha Atual:</label>
+                    <input type="password" id="currentPassword" name="senha_atual" required>
+                </div>
+                <div>
+                    <label for="newPassword">Nova Senha:</label>
+                    <input type="password" id="newPassword" name="nova_senha" required>
+                </div>
+                <div>
+                    <label for="confirmNewPassword">Confirmar Nova Senha:</label>
+                    <input type="password" id="confirmNewPassword" required>
+                </div>
+                <button type="submit" id="updatePasswordBtn">Alterar Senha</button>
+            </form>
+            <div id="passwordUpdateStatus" class="status-message"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Sistema Portal Multiespectral v0.1.0</p>
+    </footer>
+
+    <script type="module" src="js/settings.js"></script>
+</body>
+</html>
