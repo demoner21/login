@@ -5,7 +5,7 @@ from starlette.responses import Response
 from jose import jwt, JWTError
 from datetime import timedelta
 
-from config import settings
+from config import settings 
 from features.auth.service import create_access_token
 
 
@@ -33,7 +33,7 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
                     if exp_timestamp:
                         time_left_seconds = exp_timestamp - current_timestamp
 
-                        if 0 < time_left_seconds < (REFRESH_THRESHOLD_MINUTES * 60):
+                        if 0 < time_left_seconds < (settings.REFRESH_THRESHOLD_MINUTES * 60):
                             email = payload.get("sub")
 
                             if email:
