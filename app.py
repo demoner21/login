@@ -1,6 +1,7 @@
 from features.roi.router import router as roi_router
 from features.auth.router import router as auth_router
 from features.analysis.router import router as analysis_router
+from features.users.router import router as users_router
 from middleware.session_middleware import TokenRefreshMiddleware
 from utils.logging import setup_logging
 from services.earth_engine_initializer import initialize_earth_engine
@@ -37,6 +38,7 @@ app.add_middleware(
 app.add_middleware(TokenRefreshMiddleware)
 # 4. Incluir as Rotas da Aplicação
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi",
                    tags=["Regiões de Interesse"])
 app.include_router(analysis_router, prefix="/api/v1/analysis",
