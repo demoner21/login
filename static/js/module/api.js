@@ -228,3 +228,25 @@ export async function uploadAnalysisFile(file) { // O roiId foi removido
 export async function getAnalysisJobStatus(jobId) {
     return await fetchApi(`/analysis/jobs/${jobId}`);
 }
+
+export async function getUserData() {
+    return await fetchApi('/users/me');
+}
+
+export async function updateUserData(data) {
+    return await fetchApi('/users/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+}
+
+export async function updateUserPassword(data) {
+    // Este endpoint não retorna corpo, então não precisamos do .json()
+    const response = await fetchApi('/users/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    return response; // Retorna a resposta completa
+}
