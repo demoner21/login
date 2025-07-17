@@ -1,3 +1,4 @@
+import os
 import logging
 from contextlib import asynccontextmanager
 
@@ -6,6 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from config import settings
 from features.analysis.router import router as analysis_router
@@ -87,6 +89,13 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interesse"])
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
+@app.get("/login", response_class=FileResponse, tags=["Frontend"])
+async def get_login_page():
+    """Serve a página de login."""
+    # O caminho deve ser relativo à raiz do seu projeto.
+    # Assumindo que login.html está em 'static/login.html'
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(BASE_DIR, "static", "login.html")
 
 # 5. Arquivos estáticos
 #app.mount("/static", StaticFiles(directory="static", html=True), name="static")
