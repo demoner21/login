@@ -9,9 +9,6 @@ import json
 import pandas as pd
 from datetime import date
 from utils.text_normalizer import normalize_name
-from collections import defaultdict
-import fiona
-from shapely.geometry import shape
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +31,8 @@ def convert_3d_to_2d(geom):
 
 class ShapefileSplitterProcessor:
     """
-    Processador de shapefiles que converte para uma geometria 2D
-    e cria uma estrutura hierárquica de ROIs (Propriedades e Talhões)
+    Processador de shapefiles que converte para uma geometra 2D 
+    cria uma estrutura hierárquica de ROIs (Propriedades e Talhões)
     a partir de colunas especificadas.
     """
 
@@ -78,7 +75,7 @@ class ShapefileSplitterProcessor:
         """Garante que o GeoDataFrame esteja no sistema de coordenadas WGS84 (EPSG:4326)."""
         if gdf.crs is None:
             logger.warning("CRS não definido. Assumindo WGS84 (EPSG:4326).")
-            gdf = gdf.set_crs("EPSG:4326", allow_override=True)
+            gdf = gdf.set_crs("EPSG:4326", allow_override=True)  # [cite: 120]
         elif gdf.crs.to_epsg() != 4326:
             logger.info(f"Convertendo CRS de {gdf.crs} para EPSG:4326.")
             gdf = gdf.to_crs("EPSG:4326")
@@ -86,107 +83,111 @@ class ShapefileSplitterProcessor:
 
     async def process(self, temp_dir: Path, property_col: str, plot_col: str) -> List[Dict[str, Any]]:
         """
-        Processa o shapefile em modo streaming para economizar memória,
-        criando uma estrutura hierárquica de propriedades e talhões.
+        Processa o shapefile, criando uma estrutura hierárquica de propriedades e talhões.
+
+        Args:
+            temp_dir: Diretório temporário com os arquivos do shapefile.
+            property_col: Nome da coluna que identifica a Propriedade.
+            plot_col: Nome da coluna que identifica o Talhão.
+
+        Returns:
+            Uma lista de dicionários, onde cada dicionário representa uma propriedade
+            e contém uma lista de seus talhões.
         """
-        shp_files = list(temp_dir.glob("*.shp"))
-        if not shp_files:
-            raise ValueError("Nenhum arquivo .shp encontrado no diretório")
-
-        shp_path = shp_files[0]
-
-        properties_data = defaultdict(
-            lambda: {"talhoes": [], "geometries": []})
-        crs_original = "Não definido"
-
-        # 1. Leitura em Streaming com Fiona para manter o uso de memória baixo
         try:
-            with fiona.open(shp_path, 'r', encoding='utf-8') as source:
-                crs_original = str(
-                    source.crs) if source.crs else "Não definido"
+            gdf = await self._read_shapefile(temp_dir)
+            crs_original = str(gdf.crs) if gdf.crs else "Não definido"
 
-                for feature in source:
-                    geom = feature.get('geometry')
-                    if geom is None:
-                        continue
+            gdf = await self._ensure_wgs84(gdf)
+            gdf['geometry'] = gdf['geometry'].apply(convert_3d_to_2d)
+            logger.info("Geometrias 3D convertidas para 2D.")
 
-                    shapely_geom = shape(geom)
-                    geom_2d = convert_3d_to_2d(shapely_geom)
+            if property_col not in gdf.columns:
+                raise ValueError(
+                    f"A coluna de propriedade '{property_col}' não foi encontrada. Colunas disponíveis: {list(gdf.columns)}")
+            if plot_col not in gdf.columns:
+                raise ValueError(
+                    f"A coluna de talhão '{plot_col}' não foi encontrada. Colunas disponíveis: {list(gdf.columns)}")
 
-                    prop_name = feature['properties'].get(property_col)
-                    if prop_name is None:
-                        continue
+            date_columns = gdf.select_dtypes(
+                include=['datetime', 'datetimetz']).columns
+            if not date_columns.empty:
+                for col in date_columns:
+                    gdf[col] = gdf[col].apply(
+                        lambda x: x.isoformat() if pd.notnull(x) else None)
 
-                    normalized_name = normalize_name(
-                        str(prop_name), case='title')
+            normalized_col_name = "normalized_property_name"
+            gdf[normalized_col_name] = gdf[property_col].apply(
+                lambda x: normalize_name(str(x), case='title'))
 
-                    properties_data[normalized_name]["talhoes"].append(
-                        feature['properties'])
-                    properties_data[normalized_name]["geometries"].append(
-                        geom_2d)
-        except Exception as e:
-            logger.error(f"Falha ao ler o shapefile em modo streaming: {e}")
-            raise ValueError(
-                "Não foi possível ler o arquivo shapefile. Verifique o formato e a codificação."
-            )
+            results = []
+            grouped_by_property = gdf.groupby(normalized_col_name)
 
-        if not properties_data:
-            raise ValueError(
-                "Nenhum grupo de propriedade válido foi processado."
-            )
+            for normalized_name, group_gdf in grouped_by_property:
+                if group_gdf.empty:
+                    continue
 
-        # 2. Pós-processamento dos dados que agora estão em memória
-        results = []
-        try:
-            for normalized_name, data in properties_data.items():
-                property_geometry = unary_union(data['geometries'])
+                property_geometry = unary_union(group_gdf['geometry'])
+                original_property_name = group_gdf[property_col].iloc[0]
 
-                temp_prop_gdf = gpd.GeoDataFrame(
-                    [{'geometry': property_geometry}], crs="EPSG:4326")
-                area_m2 = temp_prop_gdf.to_crs(epsg=3857).area.sum()
+                area_m2 = gpd.GeoSeries([property_geometry], crs="EPSG:4326").to_crs(
+                    epsg=3857).area.sum()
                 area_ha = area_m2 / 10000
-                final_area_ha = round(area_ha, 4) if pd.notna(area_ha) else None
 
-                property_entry = {
+                property_data = {
                     "nome_propriedade": str(normalized_name),
                     "geometria": mapping(property_geometry),
                     "metadata": {
-                        "total_features": len(data['talhoes']),
-                        "area_total_ha": final_area_ha,
+                        "total_features": len(group_gdf),
+                        "area_total_ha": round(area_ha, 4),
                         "bbox": [float(b) for b in property_geometry.bounds],
                         "crs_original": crs_original,
                         "sistema_referencia": "EPSG:4326",
-                        "nome_original_propriedade": data['talhoes'][0].get(property_col, "")
+                        "nome_original_propriedade": original_property_name
                     },
                     "talhoes": []
                 }
 
-                for i, talhao_props in enumerate(data['talhoes']):
-                    talhao_geometry = data['geometries'][i]
+                for _, talhao_row in group_gdf.iterrows():
+                    talhao_geometry = talhao_row['geometry']
 
-                    temp_talhao_gdf = gpd.GeoDataFrame(
-                        [{'geometry': talhao_geometry}], crs="EPSG:4326")
-                    talhao_area_m2 = temp_talhao_gdf.to_crs(epsg=3857).area.iloc[0]
-                    talhao_area_ha = talhao_area_m2 / 10000
-                    final_talhao_area_ha = round(
-                        talhao_area_ha, 4) if pd.notna(talhao_area_ha) else None
+                    # --- INÍCIO DA CORREÇÃO ---
 
-                    cleaned_attributes = {
-                        str(key).lower(): value if pd.notna(value) else None
-                        for key, value in talhao_props.items()
-                    }
-                    cleaned_attributes['area_ha'] = final_talhao_area_ha
+                    # Limpa os atributos e PADRONIZA AS CHAVES PARA MINÚSCULAS
+                    raw_attributes = talhao_row.drop(
+                        ['geometry', normalized_col_name]).to_dict()
+                    cleaned_attributes = {}
+                    for key, value in raw_attributes.items():
+                        # Converte a chave para minúsculas
+                        clean_key = str(key).lower()
+                        if pd.isna(value):
+                            cleaned_attributes[clean_key] = None
+                        else:
+                            cleaned_attributes[clean_key] = value
 
-                    property_entry["talhoes"].append({
-                        "nome_talhao": str(talhao_props.get(plot_col)),
+                    # Calcula e adiciona a área individual do talhão
+                    talhao_series_m2 = gpd.GeoSeries(
+                        [talhao_geometry], crs="EPSG:4326").to_crs(epsg=3857).area
+                    talhao_area_ha = (
+                        talhao_series_m2.iloc[0] / 10000) if not talhao_series_m2.empty else 0
+                    cleaned_attributes['area_ha'] = round(talhao_area_ha, 4)
+
+                    # --- FIM DA CORREÇÃO ---
+
+                    talhao_data = {
+                        "nome_talhao": str(talhao_row[plot_col]),
                         "geometria": mapping(talhao_geometry),
                         "metadata": cleaned_attributes
-                    })
+                    }
+                    property_data["talhoes"].append(talhao_data)
 
-                results.append(property_entry)
+                results.append(property_data)
                 logger.info(
-                    f"Processada propriedade '{normalized_name}' com {len(property_entry['talhoes'])} talhões."
-                )
+                    f"Processada propriedade '{normalized_name}' com {len(property_data['talhoes'])} talhões.")
+
+            if not results:
+                raise ValueError(
+                    "Nenhum grupo de propriedade válido foi processado a partir do shapefile.")
 
             return results
 
