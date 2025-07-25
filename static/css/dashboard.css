@@ -226,3 +226,40 @@ border-top: 3px solid #3498db;
 .btn-save {
     background-color: #27ae60;
 }
+
+/* --- Media Query Corrigida para a Lista e Filtros --- */
+@media (max-width: 768px) {
+
+    #roiFilters {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px !important;
+    }
+
+    #roiFilters > div,
+    #roiFilters select {
+        width: 100%;
+    }
+
+    /* AJUSTA O LAYOUT DO ITEM DA LISTA */
+    #roiList li {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+        padding: 15px 10px;
+    }
+
+    /* CORRIGE O CONTAINER DOS BOTÕES */
+    #roiList li div:last-child {
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    /* Garante que os botões não tenham margens que quebrem o layout */
+    #roiList li button {
+        margin: 0;
+    }
+}

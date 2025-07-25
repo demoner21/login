@@ -47,3 +47,26 @@ form input[type="password"] {
     border-radius: 4px;
     display: none; /* Escondido por padrão */
 }
+
+@media (max-width: 768px) {
+    /* Aplica a todas as seções de formulário na página */
+    section form div {
+        flex-direction: column; /* Empilha os itens (label e input) verticalmente */
+        align-items: flex-start; /* Alinha os itens à esquerda */
+    }
+
+    section form label {
+        flex: none; /* Remove a largura fixa do label */
+        width: 90%;
+        margin-bottom: 8px; /* Adiciona um espaço abaixo do label */
+    }
+
+    section form input {
+        width: 100%; /* Faz o input ocupar toda a largura */
+    }
+
+    section form button {
+        width: 100%; /* Faz o botão ocupar toda a largura */
+        margin-top: 10px;
+    }
+}
