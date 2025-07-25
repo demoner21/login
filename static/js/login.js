@@ -83,7 +83,7 @@ loginForm.addEventListener('submit', async function(event) {
         }
 
         // Se a resposta for 204, o token foi salvo via cookie HttpOnly. Apenas redirecionamos.
-        window.location.href = '/static/dashboard.html';
+        window.location.href = 'dashboard';
 
     } catch (error) {
         console.error('Erro no login:', error);

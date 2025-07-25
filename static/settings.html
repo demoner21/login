@@ -4,16 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal Multiespectral - Configurações</title>
-    <link rel="stylesheet" href="css/dashboard.css">
-    <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/settings.css') }}">
 </head>
 <body>
     <header>
         <h1>Portal Multiespectral</h1>
         <nav>
-            <a href="/static/dashboard.html#upload">Upload Shapefile</a> |
-            <a href="/static/dashboard.html#visualizar">Minhas Regiões</a> |
-            <a href="/static/settings.html">Configurações</a> |
+            <a href="{{ url_for('get_dashboard_page') }}#upload">Upload Shapefile</a> |
+            <a href="{{ url_for('get_dashboard_page') }}#visualizar">Minhas Regiões</a> |
+            <a href="{{ url_for('get_settings_page') }}">Configurações</a> |
             <a href="#logout" id="logoutBtn">Sair</a>
         </nav>
     </header>
@@ -62,6 +62,6 @@
         <p>Sistema Portal Multiespectral v0.1.0</p>
     </footer>
 
-    <script type="module" src="js/settings.js"></script>
+    <script type="module" src="{{ url_for('static', path='js/settings.js') }}"></script>
 </body>
 </html>
