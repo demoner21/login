@@ -13,7 +13,7 @@ def is_password_strong(password: str) -> bool:
 
     result = zxcvbn.zxcvbn(password)
     # Requer score mínimo de 3 (de 0 a 4) e pelo menos 8 caracteres
-    return result["score"] >= 0 and len(password) >= 3
+    return result["score"] >= 4 and len(password) >= 8
 
 
 def get_password_hash(password: str) -> str:
