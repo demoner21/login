@@ -263,3 +263,47 @@ border-top: 3px solid #3498db;
         margin: 0;
     }
 }
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    #roiList li {
+        /* Ajustes específicos para botões em tablets */
+        flex-wrap: wrap; /* Permite que os botões quebrem a linha se não houver espaço */
+        justify-content: flex-end; /* Alinha os botões à direita */
+    }
+    #roiList li div:last-child {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 1128px) { /* Alterar aqui */
+    #roiFilters {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px !important;
+    }
+
+    #roiFilters > div,
+    #roiFilters select {
+        width: 100%;
+    }
+
+    #roiList li {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+        padding: 15px 10px;
+    }
+
+    #roiList li div:last-child {
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    #roiList li button {
+        margin: 0;
+    }
+}
