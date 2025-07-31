@@ -9,6 +9,7 @@ from . import schemas
 from .service import roi_service
 from ..auth.dependencies import get_current_user
 from utils.validators import validate_date_range
+from utils.upload_utils import cleanup_temp_files
 from features.jobs.queries import create_job, get_job_by_id
 from database.session import with_db_connection, get_db_connection
 import asyncpg
@@ -272,7 +273,11 @@ async def get_job_status_route(job_id: UUID, current_user: dict = Depends(get_cu
     response_class=FileResponse,
     summary="Baixa o arquivo de resultado de um job concluído"
 )
-async def get_job_result_file(job_id: UUID, current_user: dict = Depends(get_current_user)):
+async def get_job_result_file(
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
     user_id = current_user['id']
     job = await get_job_by_id(job_id=job_id, user_id=user_id)
     
@@ -284,5 +289,8 @@ async def get_job_result_file(job_id: UUID, current_user: dict = Depends(get_cur
     file_path = Path(job['result_path']) 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Arquivo de resultado não encontrado no servidor.")
+
+    # Adiciona a tarefa de background para deletar o arquivo após a resposta ser enviada
+    background_tasks.add_task(cleanup_temp_files, file_path.parent)
 
     return FileResponse(path=file_path, media_type='application/zip', filename=file_path.name)
