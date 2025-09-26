@@ -12,7 +12,7 @@ dependencies = [
     "pillow",
     "bcrypt==3.2.0",
     "numpy<1.28",
-    "tensorflow<2.11",
+#    "tensorflow<2.11",
     "matplotlib",
     "scikit-learn",
     "scikit-image",

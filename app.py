@@ -8,8 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from config import settings
 from features.analysis.router import router as analysis_router
@@ -32,7 +31,7 @@ async def lifespan(app: FastAPI):
     - Limpeza de recursos após o yield
     """
     logger.info("Iniciando servidor...")
-    
+
     # 1.1. Inicialização do banco de dados
     logger.info("Criando pool de conexões com o banco de dados...")
     try:
@@ -77,7 +76,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 3. Middlewares
 allowed_origins = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
@@ -93,15 +91,23 @@ app.add_middleware(
 )
 #app.add_middleware(TokenRefreshMiddleware)
 
-# 4. Rotas
+# 4. Rotas da API
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interesse"])
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
 
-@app.get("/login", response_class=HTMLResponse, tags=["Frontend"])
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 6. Rotas de Página (Frontend)
+@app.get("/", response_class=HTMLResponse, tags=["Frontend"])
 async def get_login_page(request: Request):
-    """Serve a página de login usando templates."""
+    """Serve a página de login na rota raiz."""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.get("/login", response_class=HTMLResponse, tags=["Frontend"])
+async def get_login_page_redirect(request: Request):
+    """Serve a página de login para compatibilidade."""
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.get("/dashboard", response_class=HTMLResponse, tags=["Frontend"])
@@ -114,12 +120,6 @@ async def get_settings_page(request: Request):
     """Serve a página de configurações usando templates."""
     return templates.TemplateResponse("settings.html", {"request": request})
 
-# 5. Arquivos estáticos
-app.mount("/", StaticFiles(directory="static"), name="static")
-#$ gunicorn -w 4 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:8000
-
-# 6. Health Check
-@app.get("/", tags=["Root"])
-async def read_root():
-    """Endpoint de health check da API"""
-    return {"message": "Bem-vindo à API do Portal Multiespectral"}
+# Esta linha faz o FastAPI servir arquivos estáticos de forma redundante.
+# O Nginx já lida com isso. Comente-a para evitar conflitos.
+#app.mount("/", StaticFiles(directory="static"), name="static")
