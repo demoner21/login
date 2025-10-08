@@ -100,8 +100,9 @@ async def run_multi_roi_analysis_in_background(parent_job_id: int, zip_path: Pat
         logger.error(f"[Job Pai {parent_job_id}] Erro na tarefa de background: {e}", exc_info=True)
         await queries.update_job_status(job_id=parent_job_id, status="FAILED", error_message=str(e))
     finally:
-        cleanup_temp_files(zip_path.parent)
-        logger.info(f"[Job Pai {parent_job_id}] Limpeza dos arquivos temporários concluída.")
+        #cleanup_temp_files(zip_path.parent)
+        #logger.info(f"[Job Pai {parent_job_id}] Limpeza dos arquivos temporários concluída.")
+        pass
 
 
 @router.post(
@@ -144,7 +145,7 @@ async def upload_for_analysis(
         raise HTTPException(status_code=500, detail="Não foi possível iniciar o job de análise.")
 
 @router.get(
-    "/jobs/{job_id}",
+    "/jobs/{job_id}/status",
     response_model=schemas.AnalysisJobStatusResponse,
     summary="[Análise] Consulta o status de um job"
 )
