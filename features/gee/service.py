@@ -16,9 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 class EarthEngineService:
-    """
-    Serviço para processar e exportar imagens do Google Earth Engine.
-    """
 
     def _convert_3d_to_2d(self, geom):
         if geom is None or not geom.has_z:
@@ -46,20 +43,23 @@ class EarthEngineService:
             logger.error(f"Erro ao converter geometria para EE: {e}")
             raise ValueError("Falha ao converter a geometria para o formato do Earth Engine.")
 
-    async def _download_band_async(self, session: aiohttp.ClientSession, image: ee.Image, band: str, region: Dict, filename: Path, scale: int = 10, crs: str = 'EPSG:4326') -> Optional[str]:
+    async def _download_band_async(self, session: aiohttp.ClientSession, image: ee.Image, band: str, ee_geom_to_clip: ee.Geometry, filename: Path, scale: int = 10, crs: str = 'EPSG:4326') -> Optional[str]:
         """
         Baixa uma única banda de forma assíncrona usando a URL de download do GEE.
         """
         try:
             single_band_image = image.select(band)
+            clipped_image = single_band_image.clip(ee_geom_to_clip)
+            region_to_download = ee_geom_to_clip.bounds().getInfo()['coordinates']
+
             logger.info(f"Preparando download para banda {band} em {filename.name}")
             
             loop = asyncio.get_running_loop()
             download_url = await loop.run_in_executor(
                 None,
-                lambda: single_band_image.getDownloadURL({
+                lambda: clipped_image.getDownloadURL({
                     'scale': scale,
-                    'region': region,
+                    'region': region_to_download,
                     'format': 'GEO_TIFF',
                     'crs': crs
                 })
@@ -131,12 +131,11 @@ class EarthEngineService:
             image_list = collection.toList(num_images)
 
             total_files_downloaded = 0
-
             semaphore = asyncio.Semaphore(5)
 
-            async def download_with_semaphore(session, image, band_name, region, filename, scale):
+            async def download_with_semaphore(session, image, band_name, ee_geom_to_clip, filename, scale):
                 async with semaphore:
-                    return await self._download_band_async(session, image, band_name, region, filename, scale)
+                    return await self._download_band_async(session, image, band_name, ee_geom_to_clip, filename, scale)
 
             async with aiohttp.ClientSession() as session:
                 for i in range(num_images):
@@ -145,12 +144,10 @@ class EarthEngineService:
                     date_str = datetime.fromtimestamp(date_millis/1000).strftime('%Y-%m-%d')
                     date_dir = talhao_dir / date_str
                     os.makedirs(date_dir, exist_ok=True)
-
-                    ee_region = ee_geom.bounds().getInfo()['coordinates']
+                    ee_geom_for_download = ee_geom
 
                     tasks = []
                     for band_gee_name in bands_for_gee:
-                        # --- INÍCIO DA CORREÇÃO ---
                         band_name_for_file = band_gee_name
                         if band_gee_name.upper().startswith('B') and not band_gee_name.upper().endswith('A'):
                             try:
@@ -159,13 +156,9 @@ class EarthEngineService:
                             except ValueError:
                                 pass
 
-                        # CORREÇÃO 1: Usar a variável correta 'band_name_for_file' para o nome do arquivo
                         filename = date_dir / f"sentinel2_{roi_id}_{date_str}_{band_name_for_file}.tif"
-
                         if not os.path.exists(filename):
-                            # CORREÇÃO 2: Usar a variável correta 'band_gee_name' para a função de download
-                            tasks.append(download_with_semaphore(session, image, band_gee_name, ee_region, filename, scale))
-                        # --- FIM DA CORREÇÃO ---
+                            tasks.append(download_with_semaphore(session, image, band_gee_name, ee_geom_for_download, filename, scale))
 
                     if tasks:
                         logger.info(f"Iniciando download de {len(tasks)} bandas para a data {date_str} (concorrência limitada)...")
