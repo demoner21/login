@@ -15,6 +15,7 @@ from features.analysis.router import router as analysis_router
 from features.auth.router import router as auth_router
 from features.roi.router import router as roi_router
 from features.users.router import router as users_router
+from features.reports.router import router as reports_router
 from services.earth_engine_initializer import initialize_earth_engine
 from utils.logging import setup_logging
 
@@ -96,6 +97,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interesse"])
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
+app.include_router(reports_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -119,6 +121,11 @@ async def get_dashboard_page(request: Request):
 async def get_settings_page(request: Request):
     """Serve a página de configurações usando templates."""
     return templates.TemplateResponse("settings.html", {"request": request})
+
+@app.get("/test-reports", response_class=HTMLResponse, tags=["Frontend"])
+async def get_report_test_page(request: Request):
+    """Serve a página de teste de relatórios."""
+    return templates.TemplateResponse("test_report.html", {"request": request})
 
 # Esta linha faz o FastAPI servir arquivos estáticos de forma redundante.
 # O Nginx já lida com isso. Comente-a para evitar conflitos.
