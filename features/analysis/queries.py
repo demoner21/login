@@ -1,6 +1,7 @@
 import logging
 import json
 from datetime import datetime
+import asyncpg
 from typing import List, Dict, Optional
 
 from database.session import with_db_connection, with_db_connection_bg
@@ -86,7 +87,7 @@ async def get_job_with_results(conn, *, job_id: int, user_id: int) -> Optional[D
     return root_job
 
 @with_db_connection_bg
-async def create_analysis_job_bg(conn, *, user_id: int, roi_id: int) -> int:
+async def create_analysis_job(conn: asyncpg.Connection, user_id: int, roi_id: Optional[int], parent_job_id: Optional[int] = None) -> int:
     """Cria um novo registro de job de análise (seguro para background)."""
     query = "INSERT INTO analysis_jobs (user_id, roi_id) VALUES ($1, $2) RETURNING job_id"
     job_id = await conn.fetchval(query, user_id, roi_id)
