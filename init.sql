@@ -138,3 +138,70 @@ CREATE TRIGGER set_timestamp
 BEFORE UPDATE ON public.jobs
 FOR EACH ROW
 EXECUTE FUNCTION public.trigger_set_timestamp();
+
+-- Tabela para registrar os diferentes modelos de análise de ATR
+CREATE TABLE public.modelos_atr (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    mes_referencia DATE NOT NULL, -- Armazena 'YYYY-MM-01', representa o mês de validade do modelo
+    caminho_modelo_joblib VARCHAR(1024) NOT NULL, -- Caminho para o .joblib do modelo
+    caminho_estatisticas_joblib VARCHAR(1024) NOT NULL, -- Caminho para feature_statistics.joblib [cite: 4]
+    caminho_features_joblib VARCHAR(1024) NOT NULL, -- Caminho para features_list.joblib [cite: 4]
+    ativo BOOLEAN DEFAULT true,
+    data_criacao TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(mes_referencia) -- Garante que haja apenas um modelo ativo por mês
+);
+
+-- Comentário sobre a tabela de modelos
+COMMENT ON COLUMN public.modelos_atr.mes_referencia IS 'Mês de referência para o qual o modelo foi treinado (armazena sempre o dia 01 do mês).';
+
+-- Tabela para a programação de colheita dos talhões
+CREATE TABLE public.programacao_colheita (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    talhao_id INTEGER NOT NULL,
+    data_prevista_colheita DATE NOT NULL,
+    modelo_id_sugerido INTEGER, -- O modelo que o sistema sugere para essa data
+    analysis_job_id INTEGER, -- Link para o job de análise quando for executado
+    status VARCHAR(20) DEFAULT 'PENDENTE' NOT NULL, -- Ex: PENDENTE, ANALISADO, COLHIDO
+    data_criacao TIMESTAMPTZ DEFAULT NOW(),
+    data_modificacao TIMESTAMPTZ DEFAULT NOW(),
+
+    -- Relações (Foreign Keys)
+    CONSTRAINT fk_programacao_user_id FOREIGN KEY (user_id) 
+        REFERENCES public.usuario(id) ON DELETE CASCADE,
+    CONSTRAINT fk_programacao_talhao_id FOREIGN KEY (talhao_id) 
+        REFERENCES public.regiao_de_interesse(roi_id) ON DELETE CASCADE,
+    CONSTRAINT fk_programacao_modelo_id FOREIGN KEY (modelo_id_sugerido) 
+        REFERENCES public.modelos_atr(id) ON DELETE SET NULL,
+    CONSTRAINT fk_programacao_analysis_job FOREIGN KEY (analysis_job_id) 
+        REFERENCES public.analysis_jobs(job_id) ON DELETE SET NULL,
+
+    -- Garante que um talhão não possa ser agendado duas vezes para o mesmo dia
+    UNIQUE(user_id, talhao_id, data_prevista_colheita)
+);
+
+-- Índices para otimizar consultas na nova tabela
+CREATE INDEX idx_programacao_user_id ON public.programacao_colheita(user_id);
+CREATE INDEX idx_programacao_talhao_id ON public.programacao_colheita(talhao_id);
+CREATE INDEX idx_programacao_data_colheita ON public.programacao_colheita(data_prevista_colheita);
+
+-- Trigger para atualizar 'updated_at' (reutilizando a função existente)
+CREATE TRIGGER set_timestamp_programacao
+BEFORE UPDATE ON public.programacao_colheita
+FOR EACH ROW
+EXECUTE FUNCTION public.trigger_set_timestamp();
+
+ALTER TABLE public.modelos_atr DROP CONSTRAINT IF EXISTS modelos_atr_mes_referencia_key;
+
+-- 2. Adiciona a coluna 'variedade' que faltava
+-- Esta coluna deve corresponder ao nome da variedade no metadado do talhão
+ALTER TABLE public.modelos_atr ADD COLUMN variedade VARCHAR(100) NOT NULL;
+
+-- 3. Adiciona uma nova restrição UNIQUE composta
+-- Isso garante que você só pode ter um modelo por variedade por mês
+ALTER TABLE public.modelos_atr ADD CONSTRAINT unq_modelo_variedade_mes UNIQUE (variedade, mes_referencia);
+
+-- 4. Cria um índice para buscas rápidas por variedade
+CREATE INDEX idx_modelos_atr_variedade ON public.modelos_atr(variedade);
