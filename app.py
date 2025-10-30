@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from config import settings
+from features.models.router import router as models_router
 from features.analysis.router import router as analysis_router
 from features.auth.router import router as auth_router
 from features.roi.router import router as roi_router
@@ -97,6 +98,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interesse"])
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
+app.include_router(models_router, prefix="/api/v1/models", tags=["Modelos de Análise"])
 app.include_router(reports_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
