@@ -8,7 +8,7 @@ import pandas as pd
 import rasterio
 from skimage.transform import resize
 
-# Configurações do serviço de análise
+# Configurações do serviço de 
 class CFG:
     eps = 1e-6
     # Lista de bandas que o GEE deve baixar
@@ -22,20 +22,13 @@ class TchAtrAnalysisService:
     Serviço para orquestrar a análise e predição de TCH e ATR.
     Este é o "Motor Central" da análise.
     """
-    def __init__(self, models_path: Path):
+    def __init__(self):
         """
-        Inicializa o serviço carregando os modelos e artefatos necessários.
+        Inicializa o serviço. Os modelos e artefatos
+        NÃO SÃO MAIS carregados aqui. Eles serão carregados sob demanda.
         """
-        self.models_path = models_path
-        # Carrega os modelos e outros artefatos no início para evitar I/O repetido
-        try:
-            self.model = joblib.load(self.models_path / "random_forest_ATR_model.joblib")
-            self.feature_stats = joblib.load(self.models_path / "feature_statistics.joblib")
-            self.model_feature_list = joblib.load(self.models_path / "features_list.joblib")
-            logger.info("Modelo de análise TCH/ATR e artefatos carregados com sucesso.")
-        except FileNotFoundError as e:
-            logger.error(f"Erro ao carregar arquivos do modelo: {e}. Verifique o caminho: {self.models_path}")
-            raise
+        logger.info("TchAtrAnalysisService inicializado (carregamento de modelo sob demanda).")
+        pass
 
 
     def _load_and_resize_bands(self, band_paths: Dict[str, Path]) -> Dict[str, np.ndarray]:
@@ -49,7 +42,8 @@ class TchAtrAnalysisService:
         for band_name, file_path in band_paths.items():
             try:
                 with rasterio.open(file_path) as src:
-                    if target_shape is None or (src.height * src.width > target_shape[0] * target_shape[1]):
+                    if target_shape is None or (src.height * src.width 
+ > target_shape[0] * target_shape[1]):
                         target_shape = (src.height, src.width)
             except rasterio.errors.RasterioIOError:
                 raise IOError(f"Erro ao ler o arquivo da banda {band_name}: {file_path}")
@@ -62,6 +56,7 @@ class TchAtrAnalysisService:
                 data = src.read(1)
                 if data.shape != target_shape:
                     data = resize(data, target_shape, preserve_range=True, anti_aliasing=True)
+          
                 bands_data[band_name] = data.flatten()
         
         return bands_data
@@ -124,7 +119,7 @@ class TchAtrAnalysisService:
 
         return df_resultado
 
-    def _normalize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _normalize_dataframe(self, df: pd.DataFrame, feature_stats: dict) -> pd.DataFrame:
         """
         Normaliza as colunas do DataFrame para o intervalo [-1, 1]
         usando o dicionário de estatísticas carregado.
@@ -132,8 +127,8 @@ class TchAtrAnalysisService:
         df_normalizado = df.copy()
         
         for col in df_normalizado.columns:
-            if col in self.feature_stats:
-                stats = self.feature_stats[col]
+            if col in feature_stats:
+                stats = feature_stats[col]
                 min_val = stats.get('min')
                 max_val = stats.get('max')
 
@@ -148,7 +143,8 @@ class TchAtrAnalysisService:
 
     def _prepare_image_features(self, band_paths: Dict[str, Path]) -> pd.DataFrame:
         """
-        Prepara um DataFrame com todas as features derivadas das imagens.
+        Prepara um DataFrame com todas as features 
+ derivadas das imagens.
         """
         bands_data = self._load_and_resize_bands(band_paths)
         df_bands = pd.DataFrame(bands_data)
@@ -156,9 +152,10 @@ class TchAtrAnalysisService:
         df_aggregated = df_indices.max().to_frame().T
         return df_aggregated
 
-    def _predict(self, image_features_df: pd.DataFrame, hectares: float) -> float:
+    def _predict(self, image_features_df: pd.DataFrame, hectares: float, model_artifacts: dict) -> float:
         """
         Adiciona features externas, normaliza e executa a predição.
+        USA OS ARTEFATOS DO MODELO FORNECIDOS.
         """
         # Copia para não alterar o DataFrame original
         feature_vector = image_features_df.copy()
@@ -166,33 +163,42 @@ class TchAtrAnalysisService:
         # Adiciona a feature 'Hectares' que vem dos metadados da ROI
         feature_vector['Hectares'] = hectares
         
-        # Garante que o DataFrame final tenha todas as colunas que o modelo espera, na ordem correta.
-        # Colunas que não estiverem presentes (exceto 'Hectares') serão preenchidas com 0 ou NaN se necessário.
-        # A lista `self.model_feature_list` vem do arquivo .joblib e é a fonte da verdade.
-        final_vector = pd.DataFrame(columns=self.model_feature_list)
+        # Pega a lista de features do dicionário de artefatos
+        model_feature_list = model_artifacts['model_feature_list']
+        
+        # Garante que o DataFrame final tenha todas as colunas que o modelo espera.
+        final_vector = pd.DataFrame(columns=model_feature_list)
         final_vector = pd.concat([final_vector, feature_vector], ignore_index=True).fillna(0)
         
         # Seleciona e reordena as colunas para bater com a ordem exata do modelo
-        vector_for_scaling = final_vector[self.model_feature_list]
+        vector_for_scaling = final_vector[model_feature_list]
 
-        # Normaliza os dados
-        vector_normalized = self._normalize_dataframe(vector_for_scaling)
+        # Normaliza 
+        vector_normalized = self._normalize_dataframe(
+            vector_for_scaling, 
+            feature_stats=model_artifacts['feature_stats']
+        )
         
-        # Realiza a predição
-        prediction = self.model.predict(vector_normalized)
+        # Realiza a predição (usando o modelo correto)
+        prediction = model_artifacts['model'].predict(vector_normalized)
         
         return float(prediction[0])
 
-    def run_analysis_pipeline(self, band_paths: Dict[str, Path], hectares: float) -> Dict:
+    def run_analysis_pipeline(self, band_paths: Dict[str, Path], hectares: float, model_artifacts: dict) -> Dict:
         """
         Ponto de entrada público para executar todo o pipeline de análise.
+        AGORA REQUER OS ARTEFATOS DO MODELO.
         """
         try:
             # 1. Prepara features das imagens
             image_features = self._prepare_image_features(band_paths)
             
             # 2. Adiciona features externas e faz a predição
-            predicted_value = self._predict(image_features, hectares)
+            predicted_value = self._predict(
+                image_features, 
+                hectares, 
+                model_artifacts
+            )
             
             logger.info(f"Análise para o conjunto de bandas concluída. Valor predito: {predicted_value}")
             
@@ -207,5 +213,5 @@ class TchAtrAnalysisService:
                 "message": str(e)
             }
 
-MODELS_DIR = Path("models/modelo_TCH_random_forest")
-analysis_service = TchAtrAnalysisService(models_path=MODELS_DIR)
+# Instancia o serviço sem carregar modelos
+analysis_service = TchAtrAnalysisService()
