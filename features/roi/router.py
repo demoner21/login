@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi.responses import FileResponse
 from . import schemas
-from .service import roi_service
+from . service import roi_service
 from ..auth.dependencies import get_current_user
 from utils.validators import validate_date_range
 from utils.upload_utils import cleanup_temp_files
@@ -294,3 +294,32 @@ async def get_job_result_file(
     background_tasks.add_task(cleanup_temp_files, file_path.parent)
 
     return FileResponse(path=file_path, media_type='application/zip', filename=file_path.name)
+
+@router.get(
+    "/grouped-view/harvest",
+    response_model=List[schemas.PropriedadeGroupingResponse],
+    summary="[ROI] Lista talhões agrupados por Propriedade e Variedade"
+)
+async def get_grouped_view_for_harvest(
+    current_user: dict = Depends(get_current_user),
+    conn: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Retorna uma visão hierárquica de todos os talhões do usuário,
+    agrupados por Propriedade e depois por Variedade.
+    
+    Ideal para o frontend montar a tela de seleção para 
+    a programação de colheita.
+    """
+    try:
+        # A lógica complexa de agrupamento está no serviço
+        return await roi_service.get_grouped_view_for_harvest(
+            conn=conn,
+            user_id=current_user['id']
+        )
+    except Exception as e:
+        logger.error(f"Erro ao buscar visão agrupada: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao processar o agrupamento de ROIs."
+        )

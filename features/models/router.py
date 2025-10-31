@@ -46,21 +46,36 @@ async def suggest_model(
     """
     Sugere o modelo de análise mais apropriado com base na
     DATA DE REFERÊNCIA e na VARIEDADE do talhão.
+    
+    Retorna 404 com mensagens específicas se o modelo não for encontrado.
     """
     try:
-        # A query agora espera ambos os parâmetros
+        # 1. Tenta encontrar o modelo ideal
         modelo = await queries.get_suggested_modelo(conn, data, variedade)
         
-        if not modelo:
-            # Se não houver modelo específico, podemos tentar buscar um "genérico"?
-            # Por enquanto, apenas retornamos 404.
+        if modelo:
+            return modelo # Sucesso!
+        
+        # 2. Se não encontrou (modelo is None), investiga o porquê
+        variedade_existe = await queries.check_variedade_exists(conn, variedade)
+        
+        if not variedade_existe:
+            # Causa 1: A variedade nem existe no sistema de modelos
+            logger.warning(f"Sugestão falhou: Nenhum modelo encontrado para a variedade: {variedade}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Nenhum modelo aplicável encontrado para a variedade '{variedade}' na data '{data}'."
+                detail=f"Não há modelos de análise disponíveis para a variedade '{variedade}'."
             )
-        return modelo
+        else:
+            # Causa 2: A variedade existe, mas não para esta data
+            logger.warning(f"Sugestão falhou: A variedade '{variedade}' existe, mas não para a data {data}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Não há modelo disponível para a variedade '{variedade}' na data '{data}'. (Modelos podem existir para outros meses)."
+            )
+            
     except HTTPException:
-        raise
+        raise # Re-levanta a HTTPException que acabamos de criar
     except Exception as e:
         logger.error(f"Erro ao sugerir modelo: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Erro ao sugerir modelo.")

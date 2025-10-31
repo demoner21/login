@@ -193,7 +193,6 @@ class ROIService:
         talhoes = await queries.listar_talhoes_por_propriedade(propriedade_id, user_id)
         return [self._process_roi_data(t) for t in talhoes]
         
-    # *** INÍCIO DA CORREÇÃO ***
     async def start_download_for_variety_in_property(
         self,
         *,
@@ -201,14 +200,12 @@ class ROIService:
         user_id: int,
         propriedade_id: int,
         request_data: schemas.VarietyDownloadRequest,
-        #batch_folder_name: str
     ) -> None:
         """
         Busca os talhões de uma variedade e delega o download para a função de lote principal.
         """
         logger.info(f"[Job {job_id}] Buscando talhões da variedade '{request_data.variedade}' na propriedade ID {propriedade_id}.")
         
-        # Busca os IDs dos talhões que correspondem aos critérios
         talhoes = await queries.listar_talhoes_por_propriedade_e_variedade(
             user_id=user_id,
             propriedade_id=propriedade_id,
@@ -218,14 +215,12 @@ class ROIService:
         if not talhoes:
             msg = "Nenhum talhão encontrado para os critérios de propriedade e variedade fornecidos."
             logger.warning(f"[Job {job_id}] {msg}")
-            # Atualiza o job como falha se nada for encontrado
             await update_job_status(job_id=job_id, status='FAILED', message=msg)
             return
 
         roi_ids = [t['roi_id'] for t in talhoes]
         logger.info(f"[Job {job_id}] Encontrados {len(roi_ids)} talhões. Disparando download em lote.")
 
-        # 2. DELEGUE para a função que já tem a lógica completa de job
         await self.start_batch_download_for_ids(
             job_id=job_id,
             user_id=user_id,
@@ -245,7 +240,6 @@ class ROIService:
         end_date: str,
         bands: Optional[List[str]] = None,
         max_cloud_percentage: int = 5,
-        #batch_folder_name: str
     ) -> None:
         logger.info(f"[Job {job_id}] Iniciando tarefa de download para IDs: {roi_ids}.")
         output_base_dir = Path(f"static/downloads/user_{user_id}/{job_id}")
@@ -337,5 +331,55 @@ class ROIService:
                         logger.error(f"Não foi possível remover o item temporário {item_path}: {e}")
             logger.info(f"Limpeza concluída.")
 
+    async def get_grouped_view_for_harvest(self, *, conn: asyncpg.Connection, user_id: int) -> List[Dict]:
+        """
+        Busca todos os talhões e os agrupa por Propriedade e, em seguida,
+        por Variedade, para facilitar a programação de colheita.
+        """
+        # 1. Busca a lista "plana" de talhões
+        talhoes_data = await queries.get_talhoes_agrupados_para_programacao(conn, user_id)
+        
+        # 2. Processa a lista em uma hierarquia
+        # Estrutura: { prop_id: { "propriedade_id": ..., "propriedade_nome": ..., "variedades": { ... } } }
+        propriedades_map = {}
+
+        for talhao in talhoes_data:
+            prop_id = talhao['propriedade_id']
+            # Usa 'N/A' se a variedade não estiver definida
+            variedade = talhao.get('variedade') or 'Variedade não definida'
+            
+            # Adiciona a propriedade ao mapa se for a primeira vez
+            if prop_id not in propriedades_map:
+                propriedades_map[prop_id] = {
+                    "propriedade_id": prop_id,
+                    "propriedade_nome": talhao['nome_propriedade'],
+                    "variedades": {} # Usamos um mapa aqui também para agrupar
+                }
+            
+            # Adiciona a variedade à propriedade se for a primeira vez
+            if variedade not in propriedades_map[prop_id]['variedades']:
+                propriedades_map[prop_id]['variedades'][variedade] = {
+                    "variedade_nome": variedade,
+                    "talhoes": []
+                }
+            
+            # Adiciona o talhão à sua variedade/propriedade
+            # Criamos o objeto TalhaoSimplesResponse aqui
+            talhao_simples = {
+                "roi_id": talhao['roi_id'],
+                "nome_talhao": talhao['nome_talhao'],
+                "area_ha": talhao.get('area_ha'),
+                "variedade": talhao.get('variedade')
+            }
+            propriedades_map[prop_id]['variedades'][variedade]['talhoes'].append(talhao_simples)
+
+        # 3. Converte os mapas (dicts) em listas (arrays) para a resposta JSON
+        final_response = []
+        for prop_data in propriedades_map.values():
+            # Converte o mapa de variedades em uma lista
+            prop_data['variedades'] = list(prop_data['variedades'].values())
+            final_response.append(prop_data)
+            
+        return final_response
 
 roi_service = ROIService()

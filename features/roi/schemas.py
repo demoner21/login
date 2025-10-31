@@ -92,3 +92,22 @@ class BatchDownloadRequest(BaseModel):
 class BatchDownloadResponse(BaseModel):
     message: str
     task_details: Dict
+
+class TalhaoSimplesResponse(BaseModel):
+    """Schema simplificado para listar talhões em agrupamentos."""
+    model_config = ConfigDict(from_attributes=False)
+    
+    roi_id: int 
+    nome_talhao: str
+    area_ha: Optional[float] = None
+    variedade: Optional[str] = None
+    
+class VariedadeGroupingResponse(BaseModel):
+    """Agrupamento de talhões por nome de variedade."""
+    variedade_nome: str
+    talhoes: List[TalhaoSimplesResponse]
+    
+class PropriedadeGroupingResponse(BaseModel):
+    """Resposta hierárquica completa: Propriedade -> Variedade -> Talhão."""
+    propriedade_id: int
+    propriedade_nome: str

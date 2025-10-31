@@ -1,6 +1,7 @@
 import logging
 import json
 from typing import List, Dict, Optional, Any
+import asyncpg
 
 from database.session import with_db_connection, get_db_connection
 
@@ -517,3 +518,33 @@ async def listar_rois_por_ids_para_batch(conn, roi_ids: List[int], user_id: int)
     except Exception as e:
         logger.error(f"Erro ao buscar ROIs em lote: {str(e)}", exc_info=True)
         raise
+
+async def get_talhoes_agrupados_para_programacao(conn: asyncpg.Connection, user_id: int) -> List[Dict]:
+    """
+    Busca todos os talhões de um usuário, incluindo dados da propriedade pai
+    e a variedade dos metadados, para permitir o agrupamento.
+    
+    NOTA: O metadata->>'area_ha' é lido como texto e precisa ser convertido.
+          'variedade' é lida dos metadados.
+    """
+    query = """
+        SELECT 
+            t.roi_id,
+            t.nome_talhao,
+            t.metadata->>'variedade' AS variedade,
+            (t.metadata->>'area_ha')::float AS area_ha,
+            p.roi_id AS propriedade_id,
+            p.nome_propriedade
+        FROM 
+            regiao_de_interesse t
+        JOIN 
+            regiao_de_interesse p ON t.roi_pai_id = p.roi_id
+        WHERE 
+            t.user_id = $1
+            AND t.tipo_roi = 'TALHAO'
+            AND p.tipo_roi = 'PROPRIEDADE'
+        ORDER BY 
+            p.nome_propriedade, variedade, t.nome_talhao;
+    """
+    results = await conn.fetch(query, user_id)
+    return [dict(row) for row in results]

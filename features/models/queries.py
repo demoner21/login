@@ -39,6 +39,19 @@ async def get_suggested_modelo(
     result = await conn.fetchrow(query, data_referencia, variedade)
     return dict(result) if result else None
 
+async def check_variedade_exists(conn: asyncpg.Connection, variedade: str) -> bool:
+    """
+    Verifica se existe QUALQUER modelo ativo para uma dada variedade,
+    independente do mês.
+    """
+    query = """
+        SELECT 1 FROM modelos_atr 
+        WHERE variedade = $1 AND ativo = true 
+        LIMIT 1
+    """
+    result = await conn.fetchval(query, variedade)
+    return result is not None
+
 async def get_model_paths(conn: asyncpg.Connection, modelo_id: int) -> Optional[schemas.ModeloATRPaths]:
     """Busca os caminhos dos artefatos de um modelo específico no DB."""
     query = """
