@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from config import settings
+from features.harvest.router import router as harvest_router
 from features.models.router import router as models_router
 from features.analysis.router import router as analysis_router
 from features.auth.router import router as auth_router
@@ -97,6 +98,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Autenticação"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["Usuários"])
 app.include_router(roi_router, prefix="/api/v1/roi", tags=["Regiões de Interesse"])
+app.include_router(harvest_router, prefix="/api/v1/harvest", tags=["Programação de Colheita"])
 app.include_router(analysis_router, prefix="/api/v1/analysis", tags=["Análise de TCH & ATR"])
 app.include_router(models_router, prefix="/api/v1/models", tags=["Modelos de Análise"])
 app.include_router(reports_router)
@@ -129,6 +131,11 @@ async def get_report_test_page(request: Request):
     """Serve a página de teste de relatórios."""
     return templates.TemplateResponse("test_report.html", {"request": request})
 
+@app.get("/harvesting", response_class=HTMLResponse, tags=["Frontend"])
+async def get_harvesting_page(request: Request):
+    """Serve a página de gerenciamento de colheita."""
+    return templates.TemplateResponse("harvesting.html", {"request": request})
+    
 # Esta linha faz o FastAPI servir arquivos estáticos de forma redundante.
 # O Nginx já lida com isso. Comente-a para evitar conflitos.
 #app.mount("/", StaticFiles(directory="static"), name="static")
